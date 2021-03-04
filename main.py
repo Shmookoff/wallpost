@@ -72,7 +72,7 @@ async def repost(channel):
             title = title,
             url = post_url,
             description = post_text,
-            timestamp = datetime.fromtimestamp(post_date-18000),
+            timestamp = datetime.fromtimestamp(post_date),
             colour = color
         )
         embed.set_author(
@@ -86,23 +86,23 @@ async def repost(channel):
         )
 
         if 'copy_history' in items:
-                    copy = items['copy_history'][0]
-                    rfrom_id = -(copy['from_id'])
-                    rpost_id = copy['id']
-                    rpost = vkapi.groups.getById(group_id=rfrom_id, v='5.130')
+            copy = items['copy_history'][0]
+            rfrom_id = -(copy['from_id'])
+            rpost_id = copy['id']
+            # rpost = vkapi.groups.getById(group_id=rfrom_id, v='5.130')
 
-                    rpost_url = f'https://vk.com/wall-{rfrom_id}_{rpost_id}'
-                    rpost_text = copy['text']
-                    rpost_date = copy['date']
-                
-                    rauthor_name = rpost[0]['name']
-                    rauthor_photo = rpost[0]['photo_200']
-                    rauthor_url = f'https://vk.com/public{rfrom_id}'
+            rpost_url = f'https://vk.com/wall-{rfrom_id}_{rpost_id}'
+            rpost_text = copy['text']
+            # rpost_date = copy['date']
+        
+            # rauthor_name = rpost[0]['name']
+            # rauthor_photo = rpost[0]['photo_200']
+            # rauthor_url = f'https://vk.com/public{rfrom_id}'
 
-                    embed.add_field(
-                        name = '↪️ Репост',
-                        value = f'[**Открыть запись**]({rpost_url})\n>>> {rpost_text}'
-                    )
+            embed.add_field(
+                name = '↪️ Репост',
+                value = f'[**Открыть запись**]({rpost_url})\n>>> {rpost_text}'
+            )
 
         if is_there_a_photo:
             embed.set_image(url = image_url)
