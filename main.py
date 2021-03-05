@@ -33,12 +33,17 @@ async def repost(channel):
     with dbcon.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
         cur.execute("SELECT value FROM data WHERE id = 1;")
         last_post = cur.fetchone()['value']
-    if last_post != post['items'][0]['id']:
-        items = post['items'][0]
+    
+    if post['items'][0]['is_pinned'] == 1:
+        post = vkapi.wall.get(owner_id=-(settings['wallId']), extended=False, count=2, v='5.130')
+        post_count = 1
+    else: post_count = 0
+
+    if last_post != post['items'][post_count]['id']:
+        items = post['items'][post_count]
         group = post['groups'][0]
         from_id = -(items['from_id'])
         post_id = items['id']
-        # group_id = group['id']
 
         #Запись
         post_url = f'https://vk.com/wall-{from_id}_{post_id}'
