@@ -7,7 +7,7 @@ settings = {
     'discordToken': os.environ.get("TOKEN"),
 
     #VK
-    'wallId': 125004421,
+    'wallId': 186105035,
     'vkToken': os.environ.get("ACCESS_TOKEN"),
 
     #Postgres
