@@ -1,2 +1,3 @@
 discord
 vk
+psycopg2
