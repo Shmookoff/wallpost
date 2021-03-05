@@ -1,6 +1,5 @@
 import discord
 import vk
-import json
 import psycopg2
 import psycopg2.extras
 from datetime import datetime
