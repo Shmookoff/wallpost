@@ -1,13 +1,14 @@
 import discord
 import vk
 import json
+import psycopg2
+import psycopg2.extras
 from datetime import datetime
 from discord.ext import commands, tasks
 from config import settings
 
 client = commands.Bot(command_prefix=settings['prefix'])
 
-channel = client.get_channel(776262430174216212)
 session = vk.AuthSession(access_token=settings['vkToken'], app_id='7779645')
 vkapi = vk.API(session)
 
@@ -28,11 +29,14 @@ async def hello(ctx):
 @tasks.loop(seconds=60)
 async def repost(channel):
     post = vkapi.wall.get(owner_id=-(settings['wallId']), extended=False, count=1, v='5.130')
-    with open('data.json', 'r') as f:
-        data = json.load(f)
-    if data['lastPost'] != post['items'][0]['id']:
+    dbcon = psycopg2.connect(host=settings['dbHost'], dbname=settings['dbName'], user=settings['dbUser'], password=settings['dbPassword'])
+
+    with dbcon.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
+        cur.execute("SELECT value FROM data WHERE id = 1;")
+        last_post = cur.fetchone()['value']
+    if last_post != post['items'][0]['id']:
         items = post['items'][0]
-        group = post['groups'][0]  
+        group = post['groups'][0]
         from_id = -(items['from_id'])
         post_id = items['id']
         # group_id = group['id']
@@ -66,8 +70,6 @@ async def repost(channel):
                             image_url = size['url']             #Присвоить ссылку на текущее изображение
                     break
         
-        
-            
         embed = discord.Embed(
             title = title,
             url = post_url,
@@ -84,7 +86,10 @@ async def repost(channel):
             text = vk_name,
             icon_url = vk_photo
         )
-
+        
+        if is_there_a_photo:
+            embed.set_image(url = image_url)
+        
         if 'copy_history' in items:
             copy = items['copy_history'][0]
             rfrom_id = -(copy['from_id'])
@@ -104,13 +109,16 @@ async def repost(channel):
                 value = f'[**Открыть запись**]({rpost_url})\n>>> {rpost_text}'
             )
 
-        if is_there_a_photo:
-            embed.set_image(url = image_url)
-        
-        data['lastPost'] = post_id
-        with open('data.json', 'w') as f:
-            json.dump(data, f, indent=2)
         await channel.send(embed=embed)
+
+        with dbcon.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
+            cur.execute(f"UPDATE data SET value = {post_id} WHERE id = 1;")
+        dbcon.commit()
+        dbcon.close()
+        
         print(f'Post {post_url} reposted!')
+    else:
+        dbcon.commit() 
+        dbcon.close()
 
 client.run(settings['discordToken'])
