@@ -31,9 +31,6 @@ def get_prefix(client, message):
 client = commands.Bot(get_prefix)
 client.remove_command('help')
 
-session = vk.AuthSession(access_token=settings['vkToken'])
-vkapi = vk.API(session)
-
 title = 'Открыть запись'
 color = 2590709
 
@@ -186,6 +183,11 @@ async def setup(ctx, action, messages, channel, wall, walli, embed):
             messages = []
             await ctx.send('❌ Cancelled')
 
+def authentificate(token):
+    session = vk.AuthSession(access_token=token)
+    vkapi = vk.API(session)
+    return vkapi
+
 
 @client.event
 async def on_ready():
@@ -332,9 +334,10 @@ async def subscriptions(ctx):
     embed = discord.Embed(
         title = 'Authentification',
         url = f'https://posthound.herokuapp.com/oauth2/login?server_id={Fernet(key).encrypt(ctx.guild.id.encode())}&key_uuid={key_uuid}',
-        description = 'Authentificate with your VK profile to be able to subscribe to a VK wall.'
+        description = 'Authentificate with your VK profile to be able to subscribe to a VK wall.',
+        colour = color
     )
-    await ctx.author.send()
+    await ctx.author.send(embed)
 
 @subscriptions.command(aliases=['a'])
 @bot_has_permissions(manage_webhooks=True, add_reactions=True, manage_messages=True, read_message_history=True, send_messages=True)
@@ -346,6 +349,12 @@ async def add(ctx, vk_id: str=None, webhook_channel: discord.TextChannel=None):
     elif vk_id == None: raise vkIdNotSpecifiedError
     elif len(await webhook_channel.webhooks()) == 10: raise MaximumWebhooksReached
     else:
+        with psycopg2.connect(host=settings['dbHost'], dbname=settings['dbName'], user=settings['dbUser']) as dbcon:
+            with dbcon.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
+                cur.execute("SELECT token FROM server WHERE id = %s", (ctx.guild.id))
+                vkapi = authentificate(cur.fetchone()['token'])
+        dbcon.close
+
         try: groupi = vkapi.groups.getById(group_id=vk_id, fields="status,description,members_count", v='5.130')
         except Exception as error:
             if isinstance(error, exceptions.VkAPIError) and '100' in str(error):
@@ -465,6 +474,12 @@ async def information(ctx, channel: discord.TextChannel=None):
     if channel == None: channel = ctx.channel
     if channel == None: raise channelNotSpecifiedError
     else:
+        with psycopg2.connect(host=settings['dbHost'], dbname=settings['dbName'], user=settings['dbUser']) as dbcon:
+            with dbcon.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
+                cur.execute("SELECT token FROM server WHERE id = %s", (ctx.guild.id))
+                vkapi = authentificate(cur.fetchone()['token'])
+        dbcon.close
+
         with psycopg2.connect(host=settings['dbHost'], dbname=settings['dbName'], user=settings['dbUser'], password=settings['dbPassword']) as dbcon:
             with dbcon.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
                 cur.execute(f"SELECT vk_id, vk_type FROM subscription WHERE channel_id = {channel.id}")
@@ -566,6 +581,12 @@ async def delete(ctx, vk_id: str=None, webhook_channel: discord.TextChannel=None
     if webhook_channel == None: raise channelNotSpecifiedError
     elif vk_id == None: raise vkIdNotSpecifiedError
     else:
+        with psycopg2.connect(host=settings['dbHost'], dbname=settings['dbName'], user=settings['dbUser']) as dbcon:
+            with dbcon.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
+                cur.execute("SELECT token FROM server WHERE id = %s", (ctx.guild.id))
+                vkapi = authentificate(cur.fetchone()['token'])
+        dbcon.close
+
         try: groupi = vkapi.groups.getById(group_id=vk_id, fields="status,description,members_count", v='5.130')
         except Exception as error:
             if isinstance(error, exceptions.VkAPIError) and '100' in str(error):
