@@ -335,7 +335,7 @@ async def subscriptions(ctx):
     dbcon.close
     embed = discord.Embed(
         title = 'Authentification',
-        url = f'https://posthound.herokuapp.com/oauth2/login?server_id={Fernet(key).encrypt(str(ctx.guild.id).encode())}&key_uuid={key_uuid}',
+        url = f'https://posthound.herokuapp.com/oauth2/login?server_id={Fernet(key).encrypt(str(ctx.guild.id).encode()).decode()}&key_uuid={key_uuid}',
         description = 'Authentificate with your VK profile to be able to subscribe to a VK wall.',
         colour = color
     )

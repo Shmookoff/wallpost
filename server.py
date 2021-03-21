@@ -29,7 +29,7 @@ def get_code():
             with dbcon.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
                 cur.execute("SELECT key FROM server WHERE key_uuid = %s", (data['key_uuid']))
                 key = cur.fetchone()['key']
-                cur.execute("UPDATE server SET vk_id = %s, token = %s WHERE id = %s", (response['user_id'], response['access_token'], Fernet(key).decrypt(data['server_id']).decode()))
+                cur.execute("UPDATE server SET vk_id = %s, token = %s WHERE id = %s", (response['user_id'], response['access_token'], Fernet(key).decrypt(data['server_id'].encode()).decode()))
         dbcon.close
         return 'OK!'
     
