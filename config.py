@@ -2,13 +2,12 @@ import os
 settings = {
     #Discord
     'bot': 'Notifications',
-    'prefix': '.',
-    'id': 816672552918974524,
     'discordToken': os.environ.get("TOKEN"),
 
     #VK
-    'wallId': 186105035,
-    'vkToken': os.environ.get("ACCESS_TOKEN"),
+    'vkAppId': 7797033,
+    'vkSecureKey': os.environ.get("VK_SECURE_KEY"),
+    'vkRedirectUri': 'https://posthound.herokuapp.com/oauth2/redirect',
 
     #Postgres
     'dbHost': 'ec2-99-80-200-225.eu-west-1.compute.amazonaws.com',

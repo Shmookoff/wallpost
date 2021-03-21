@@ -4,7 +4,15 @@ verify_ssl = true
 name = "pypi"
 
 [packages]
-django = "==2.0.7"
+discord = "*"
+vk = "*"
+psycopg2 = "*"
+texttable = "*"
+asyncio = "*"
+aiohttp = "*"
+flask = "*"
+cryptography = "*"
+gunicorn = "*"
 
 [dev-packages]
 
