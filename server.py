@@ -1,6 +1,7 @@
 from flask import Flask, redirect, request
 import requests
 import psycopg2
+import psycopg2.extras
 from cryptography.fernet import Fernet
 from config import settings
 

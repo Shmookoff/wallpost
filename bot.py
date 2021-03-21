@@ -328,16 +328,18 @@ async def prefix_set_error(ctx, error):
 async def subscriptions(ctx):
     with psycopg2.connect(host=settings['dbHost'], dbname=settings['dbName'], user=settings['dbUser'], password=settings['dbPassword']) as dbcon:
         with dbcon.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
-            cur.execute("SELECT key, key_uuid FROM server WHERE id = %s", (ctx.guild.id))
-            key, key_uuid = cur.fetchone()['key'], cur.fetchone()['key_uuid']
+            cur.execute(f"SELECT key, key_uuid FROM server WHERE id = {ctx.guild.id}")
+            res = cur.fetchone()
+            print(res)
+            key, key_uuid = res['key'], res['key_uuid']
     dbcon.close
     embed = discord.Embed(
         title = 'Authentification',
-        url = f'https://posthound.herokuapp.com/oauth2/login?server_id={Fernet(key).encrypt(ctx.guild.id.encode())}&key_uuid={key_uuid}',
+        url = f'https://posthound.herokuapp.com/oauth2/login?server_id={Fernet(key).encrypt(str(ctx.guild.id).encode())}&key_uuid={key_uuid}',
         description = 'Authentificate with your VK profile to be able to subscribe to a VK wall.',
         colour = color
     )
-    await ctx.author.send(embed)
+    await ctx.author.send(embed=embed)
 
 @subscriptions.command(aliases=['a'])
 @bot_has_permissions(manage_webhooks=True, add_reactions=True, manage_messages=True, read_message_history=True, send_messages=True)
