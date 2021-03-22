@@ -16,6 +16,23 @@ from discord.ext.commands import bot_has_permissions, has_permissions
 from discord.errors import HTTPException
 from config import settings
 
+
+title, color = 'Открыть запись', 2590709
+ERROR_title, ERROR_color = 'ERROR', 16711680
+
+
+#ERRORS
+class prefixGreaterThan3(Exception): pass
+class channelNotSpecifiedError(Exception): pass
+class MaximumWebhooksReached(Exception): pass
+class vkIdNotSpecifiedError(Exception): pass
+class vkWallBlockedError(Exception): pass
+class subExists(Exception): pass
+class noSubs(Exception): pass
+class notSub(Exception): pass
+
+
+#FUNCTIONS
 def get_prefix(client, message):
     with psycopg2.connect(host=settings['dbHost'], dbname=settings['dbName'], user=settings['dbUser'], password=settings['dbPassword']) as dbcon:
         with dbcon.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
@@ -28,42 +45,11 @@ def get_prefix(client, message):
     else: 
         return prefix
 
-client = commands.Bot(get_prefix)
-client.remove_command('help')
+def authentificate(token):
+    session = vk.AuthSession(access_token=token)
+    vkapi = vk.API(session)
+    return vkapi
 
-title = 'Открыть запись'
-color = 2590709
-
-#ERRORS
-class prefixGreaterThan3(Exception): pass
-class channelNotSpecifiedError(Exception): pass
-class MaximumWebhooksReached(Exception): pass
-class vkIdNotSpecifiedError(Exception): pass
-class vkWallBlockedError(Exception): pass
-class subExists(Exception): pass
-class noSubs(Exception): pass
-class notSub(Exception): pass
-
-ERROR_title = 'ERROR'
-ERROR_color = 16711680
-
-def set_error_embed(d):
-    error_embed = discord.Embed(title=ERROR_title, colour=ERROR_color, description=d)
-    return error_embed
-
-def add_command_and_example(ctx, error_embed, command, example):
-    error_embed.add_field(
-        name = 'Command',
-        value = command,
-        inline = False
-    )
-    error_embed.add_field(
-        name = 'Example',
-        value = example,
-        inline = False
-    )
-
-#FUNCTIONS
 def group_compile_embed(group):
     group_embed = discord.Embed(
         title = group['name'],
@@ -183,15 +169,59 @@ async def setup(ctx, action, messages, channel, wall, walli, embed):
             messages = []
             await ctx.send('❌ Cancelled')
 
-def authentificate(token):
-    session = vk.AuthSession(access_token=token)
-    vkapi = vk.API(session)
-    return vkapi
+def set_error_embed(d):
+    error_embed = discord.Embed(title=ERROR_title, colour=ERROR_color, description=d)
+    return error_embed
+
+def add_command_and_example(ctx, error_embed, command, example):
+    error_embed.add_field(
+        name = 'Command',
+        value = command,
+        inline = False
+    )
+    error_embed.add_field(
+        name = 'Example',
+        value = example,
+        inline = False
+    )
+
+def get_vk_info():
+    vkapi = authentificate(settings['vkServiceKey'])
+    vk_info = vkapi.groups.getById(group_id=22822305, v='5.130')
+    vk = {'name': vk_info[0]['name'], 'photo': vk_info[0]['photo_200']}
+    return vk
+
+
+client = commands.Bot(command_prefix=get_prefix, activity=discord.Activity(name='.help', type='1'))
+client.remove_command('help')
 
 
 @client.event
 async def on_ready():
-    await client.change_presence(status=discord.Status.idle, activity=discord.Game('Найтрейвен хахаха'))
+    with psycopg2.connect(host=settings['dbHost'], dbname=settings['dbName'], user=settings['dbUser'], password=settings['dbPassword']) as dbcon:
+        with dbcon.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
+            cur.execute("SELECT id FROM server")
+            guilds_in_db = cur.fetchall()
+        guilds_connected = client.guilds
+
+        guilds_connected_array = []
+        guilds_in_db_array = []
+
+        for guild in guilds_in_db:
+            guilds_in_db_array.append(guild['id'])
+        for guild in guilds_connected:
+            guilds_connected_array.append(guild.id)
+
+        for guild in guilds_connected_array:
+            if not guild in guilds_in_db_array:
+                with dbcon.cursor() as cur:
+                    cur.execute("INSERT INTO server (id, key, key_uuid) VALUES(%s, %s, uuid_generate_v4())", (guild, Fernet.generate_key()))
+        for guild in guilds_in_db_array:
+            if not guild in guilds_connected_array:
+                with dbcon.cursor() as cur:
+                    cur.execute("DELETE FROM server WHERE id = %s", (guild))
+    dbcon.close()
+
     print('Ready!')
 
 @client.event
@@ -330,15 +360,21 @@ async def subscriptions(ctx):
         with dbcon.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
             cur.execute(f"SELECT key, key_uuid FROM server WHERE id = {ctx.guild.id}")
             res = cur.fetchone()
-            print(res)
             key, key_uuid = res['key'], res['key_uuid']
     dbcon.close
+
+    vk = get_vk_info()
+
     embed = discord.Embed(
         title = 'Authentification',
         url = f'https://posthound.herokuapp.com/oauth2/login?server_id={Fernet(key).encrypt(str(ctx.guild.id).encode()).decode()}&key_uuid={key_uuid}',
-        description = 'Authentificate with your VK profile to be able to subscribe to a VK wall.',
+        description = 'Authentificate with your VK profile to be able to subscribe to a VK wall.\n\n**Please, do not pass any arguments from link or link itself to 3rd parties. __It may result in security flaws.__**',
         colour = color
     )
+    embed.set_thumbnail(url=vk['photo'])
+    embed.set_footer(text=vk['name'], icon_url=vk['photo'])
+
+    await ctx.send('Check your DM for an authentification link!')
     await ctx.author.send(embed=embed)
 
 @subscriptions.command(aliases=['a'])
@@ -351,68 +387,73 @@ async def add(ctx, vk_id: str=None, webhook_channel: discord.TextChannel=None):
     elif vk_id == None: raise vkIdNotSpecifiedError
     elif len(await webhook_channel.webhooks()) == 10: raise MaximumWebhooksReached
     else:
-        with psycopg2.connect(host=settings['dbHost'], dbname=settings['dbName'], user=settings['dbUser']) as dbcon:
+        with psycopg2.connect(host=settings['dbHost'], dbname=settings['dbName'], user=settings['dbUser'], password=settings['dbPassword']) as dbcon:
             with dbcon.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
-                cur.execute("SELECT token FROM server WHERE id = %s", (ctx.guild.id))
-                vkapi = authentificate(cur.fetchone()['token'])
+                cur.execute("SELECT token FROM server WHERE id = %s", (ctx.guild.id,))
+                token = cur.fetchone()['token']
         dbcon.close
 
-        try: groupi = vkapi.groups.getById(group_id=vk_id, fields="status,description,members_count", v='5.130')
-        except Exception as error:
-            if isinstance(error, exceptions.VkAPIError) and '100' in str(error):
-                groupi = [{'deactivated': True}]
-        try: useri = vkapi.users.get(user_ids=vk_id, fields='photo_max,status,screen_name,followers_count,counters', v='5.130')
-        except Exception as error:
-            if isinstance(error, exceptions.VkAPIError) and '113' in str(error):
-                useri = [{'deactivated': True}]
+        if token == None: 
+            await subscriptions(ctx)
+        else: 
+            vkapi = authentificate(token)
 
-        add.webhook_channel = webhook_channel
-        if not 'deactivated' in groupi[0] and not 'deactivated' in useri[0]:
-            group_embed = group_compile_embed(groupi[0])
-            user_embed = user_compile_embed(useri[0])
+            try: groupi = vkapi.groups.getById(group_id=vk_id, fields="status,description,members_count", v='5.130')
+            except Exception as error:
+                if isinstance(error, exceptions.VkAPIError) and '100' in str(error):
+                    groupi = [{'deactivated': True}]
+            try: useri = vkapi.users.get(user_ids=vk_id, fields='photo_max,status,screen_name,followers_count,counters', v='5.130')
+            except Exception as error:
+                if isinstance(error, exceptions.VkAPIError) and '113' in str(error):
+                    useri = [{'deactivated': True}]
 
-            messages = []
-            messages.append(await ctx.send(embed=group_embed))
-            messages.append(await ctx.send('React with ⬆️ for **group** wall\nReact with ❌ for cancel\nReact with ⬇️ for **user** wall'))
-            messages.append(await ctx.send(embed=user_embed))
+            add.webhook_channel = webhook_channel
+            if not 'deactivated' in groupi[0] and not 'deactivated' in useri[0]:
+                group_embed = group_compile_embed(groupi[0])
+                user_embed = user_compile_embed(useri[0])
 
-            for emoji in ['⬆️', '❌', '⬇️']:
-                await messages[1].add_reaction(emoji)
-            
-            try:
-                r, u = await client.wait_for('reaction_add', check=lambda r, u: u == ctx.author and r.message == messages[1] and r.emoji in ['⬆️', '❌', '⬇️'], timeout=120.0)
-            except asyncio.TimeoutError:
-                await ctx.channel.delete_messages(messages)
                 messages = []
-                await ctx.send('❌ Cancelled (timeout)')
-            else:
-                await ctx.channel.delete_messages(messages)
-                messages = []
+                messages.append(await ctx.send(embed=group_embed))
+                messages.append(await ctx.send('React with ⬆️ for **group** wall\nReact with ❌ for cancel\nReact with ⬇️ for **user** wall'))
+                messages.append(await ctx.send(embed=user_embed))
 
-                if r.emoji == '⬆️':
-                    await setup(ctx, 'add', messages, webhook_channel, 'g', groupi[0], group_embed)
-
-                elif r.emoji == '⬇️':
-                    await setup(ctx, 'add', messages, webhook_channel, 'u', useri[0], user_embed)
-
+                for emoji in ['⬆️', '❌', '⬇️']:
+                    await messages[1].add_reaction(emoji)
+                
+                try:
+                    r, u = await client.wait_for('reaction_add', check=lambda r, u: u == ctx.author and r.message == messages[1] and r.emoji in ['⬆️', '❌', '⬇️'], timeout=120.0)
+                except asyncio.TimeoutError:
+                    await ctx.channel.delete_messages(messages)
+                    messages = []
+                    await ctx.send('❌ Cancelled (timeout)')
                 else:
-                    await ctx.send('❌ Cancelled')
+                    await ctx.channel.delete_messages(messages)
+                    messages = []
 
-        elif not 'deactivated' in groupi[0]:
-            group_embed = group_compile_embed(groupi[0])
-            
-            messages = []
-            
-            await setup(ctx, 'add', messages, webhook_channel, 'g', groupi[0], group_embed)
+                    if r.emoji == '⬆️':
+                        await setup(ctx, 'add', messages, webhook_channel, 'g', groupi[0], group_embed)
 
-        elif not 'deactivated' in useri[0]:
-            user_embed = user_compile_embed(useri[0])
+                    elif r.emoji == '⬇️':
+                        await setup(ctx, 'add', messages, webhook_channel, 'u', useri[0], user_embed)
 
-            messages = []
+                    else:
+                        await ctx.send('❌ Cancelled')
 
-            await setup(ctx, 'add', messages, webhook_channel, 'u', useri[0], user_embed)
+            elif not 'deactivated' in groupi[0]:
+                group_embed = group_compile_embed(groupi[0])
+                
+                messages = []
+                
+                await setup(ctx, 'add', messages, webhook_channel, 'g', groupi[0], group_embed)
 
-        else: raise vkWallBlockedError
+            elif not 'deactivated' in useri[0]:
+                user_embed = user_compile_embed(useri[0])
+
+                messages = []
+
+                await setup(ctx, 'add', messages, webhook_channel, 'u', useri[0], user_embed)
+
+            else: raise vkWallBlockedError
 
 @add.error
 async def subscriptions_add_error(ctx, error):
@@ -476,63 +517,68 @@ async def information(ctx, channel: discord.TextChannel=None):
     if channel == None: channel = ctx.channel
     if channel == None: raise channelNotSpecifiedError
     else:
-        with psycopg2.connect(host=settings['dbHost'], dbname=settings['dbName'], user=settings['dbUser']) as dbcon:
-            with dbcon.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
-                cur.execute("SELECT token FROM server WHERE id = %s", (ctx.guild.id))
-                vkapi = authentificate(cur.fetchone()['token'])
-        dbcon.close
-
         with psycopg2.connect(host=settings['dbHost'], dbname=settings['dbName'], user=settings['dbUser'], password=settings['dbPassword']) as dbcon:
             with dbcon.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
-                cur.execute(f"SELECT vk_id, vk_type FROM subscription WHERE channel_id = {channel.id}")
-                subs = cur.fetchall()
+                cur.execute("SELECT token FROM server WHERE id = %s", (ctx.guild.id,))
+                token = cur.fetchone()['token']
         dbcon.close
 
-        embed = discord.Embed(
-            title = f'Wall subscriptions',
-            description = f'**for **{channel.mention}** channel:**',
-            colour = color
-        )
+        if token == None: 
+            await subscriptions(ctx)
+        else: 
+            vkapi = authentificate(token)
 
-        table = texttable.Texttable(max_width=0)
-        table.set_cols_align(['c','c','c','c'])
-        table.header(['Name', 'Short address', 'Type', 'ID'])
-        table.set_cols_dtype(['t','t','t','i'])
-        table.set_chars(['─','│','┼','─'])
+            with psycopg2.connect(host=settings['dbHost'], dbname=settings['dbName'], user=settings['dbUser'], password=settings['dbPassword']) as dbcon:
+                with dbcon.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
+                    cur.execute(f"SELECT vk_id, vk_type FROM subscription WHERE channel_id = {channel.id}")
+                    subs = cur.fetchall()
+            dbcon.close
 
-        if len(subs) > 0:
-            groups, users = '', ''
-            for sub in subs:
-                if sub['vk_type'] == 'g': groups += f"{sub['vk_id']},"
-                else: users += f"{sub['vk_id']},"
-                    
-            r_groups = vkapi.groups.getById(group_ids=groups, v='5.130')
-            r_users = vkapi.users.get(user_ids=users, fields='screen_name', v='5.130')
+            embed = discord.Embed(
+                title = f'Wall subscriptions',
+                description = f'**for **{channel.mention}** channel:**',
+                colour = color
+            )
 
-            for wall in r_groups:
-                name = f"{wall['name']}"
-                type = 'Group'
+            table = texttable.Texttable(max_width=0)
+            table.set_cols_align(['c','c','c','c'])
+            table.header(['Name', 'Short address', 'Type', 'ID'])
+            table.set_cols_dtype(['t','t','t','i'])
+            table.set_chars(['─','│','┼','─'])
 
-                table.add_row([name, wall['screen_name'], type, wall['id']])
-                embed.add_field(
-                    name = name,
-                    value = f"Short address: `{wall['screen_name']}`\nType: `{type}`\nID: `{wall['id']}`",
-                    inline = True
-                )
+            if len(subs) > 0:
+                groups, users = '', ''
+                for sub in subs:
+                    if sub['vk_type'] == 'g': groups += f"{sub['vk_id']},"
+                    else: users += f"{sub['vk_id']},"
+                        
+                r_groups = vkapi.groups.getById(group_ids=groups, v='5.130')
+                r_users = vkapi.users.get(user_ids=users, fields='screen_name', v='5.130')
 
-            for wall in r_users:
-                name = f"{wall['first_name']} {wall['last_name']}"
-                type = 'User'
+                for wall in r_groups:
+                    name = f"{wall['name']}"
+                    type = 'Group'
 
-                table.add_row([name, wall['screen_name'], type, wall['id']])
-                embed.add_field(
-                    name = name,
-                    value = f"Short address: `{wall['screen_name']}`\nType: `{type}`\nID: `{wall['id']}`",
-                    inline = True
-                )
+                    table.add_row([name, wall['screen_name'], type, wall['id']])
+                    embed.add_field(
+                        name = name,
+                        value = f"Short address: `{wall['screen_name']}`\nType: `{type}`\nID: `{wall['id']}`",
+                        inline = True
+                    )
 
-            await ctx.send(f"**Wall subscriptions for **{channel.mention}** channel:**\n```{table.draw()}```", embed=embed)
-        else: raise noSubs
+                for wall in r_users:
+                    name = f"{wall['first_name']} {wall['last_name']}"
+                    type = 'User'
+
+                    table.add_row([name, wall['screen_name'], type, wall['id']])
+                    embed.add_field(
+                        name = name,
+                        value = f"Short address: `{wall['screen_name']}`\nType: `{type}`\nID: `{wall['id']}`",
+                        inline = True
+                    )
+
+                await ctx.send(f"**Wall subscriptions for **{channel.mention}** channel:**\n```{table.draw()}```", embed=embed)
+            else: raise noSubs
 
 @information.error
 async def susbcriptions_information_error(ctx, error):
@@ -583,108 +629,113 @@ async def delete(ctx, vk_id: str=None, webhook_channel: discord.TextChannel=None
     if webhook_channel == None: raise channelNotSpecifiedError
     elif vk_id == None: raise vkIdNotSpecifiedError
     else:
-        with psycopg2.connect(host=settings['dbHost'], dbname=settings['dbName'], user=settings['dbUser']) as dbcon:
+        with psycopg2.connect(host=settings['dbHost'], dbname=settings['dbName'], user=settings['dbUser'], password=settings['dbPassword']) as dbcon:
             with dbcon.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
-                cur.execute("SELECT token FROM server WHERE id = %s", (ctx.guild.id))
-                vkapi = authentificate(cur.fetchone()['token'])
+                cur.execute("SELECT token FROM server WHERE id = %s", (ctx.guild.id,))
+                token = cur.fetchone()['token']
         dbcon.close
 
-        try: groupi = vkapi.groups.getById(group_id=vk_id, fields="status,description,members_count", v='5.130')
-        except Exception as error:
-            if isinstance(error, exceptions.VkAPIError) and '100' in str(error):
-                groupi = [{'deactivated': True}]
-        try: useri = vkapi.users.get(user_ids=vk_id, fields='photo_max,status,screen_name,followers_count,counters', v='5.130')
-        except Exception as error:
-            if isinstance(error, exceptions.VkAPIError) and '113' in str(error):
-                useri = [{'deactivated': True}]
-        
-        if not 'deactivated' in groupi[0] and not 'deactivated' in useri[0]:
-            with psycopg2.connect(host=settings['dbHost'], dbname=settings['dbName'], user=settings['dbUser'], password=settings['dbPassword']) as dbcon:
-                with dbcon.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
-                    cur.execute(f"SELECT vk_id, vk_type FROM subscription WHERE channel_id = {webhook_channel.id} AND (vk_id = {groupi[0]['id']} OR vk_id = {useri[0]['id']})")
-                    subs = cur.fetchall()
-            dbcon.close
+        if token == None: 
+            await subscriptions(ctx)
+        else: 
+            vkapi = authentificate(token)
 
-            if len(subs) == 2:
-                group_embed = group_compile_embed(groupi[0])
-                user_embed = user_compile_embed(useri[0])
+            try: groupi = vkapi.groups.getById(group_id=vk_id, fields="status,description,members_count", v='5.130')
+            except Exception as error:
+                if isinstance(error, exceptions.VkAPIError) and '100' in str(error):
+                    groupi = [{'deactivated': True}]
+            try: useri = vkapi.users.get(user_ids=vk_id, fields='photo_max,status,screen_name,followers_count,counters', v='5.130')
+            except Exception as error:
+                if isinstance(error, exceptions.VkAPIError) and '113' in str(error):
+                    useri = [{'deactivated': True}]
+            
+            if not 'deactivated' in groupi[0] and not 'deactivated' in useri[0]:
+                with psycopg2.connect(host=settings['dbHost'], dbname=settings['dbName'], user=settings['dbUser'], password=settings['dbPassword']) as dbcon:
+                    with dbcon.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
+                        cur.execute(f"SELECT vk_id, vk_type FROM subscription WHERE channel_id = {webhook_channel.id} AND (vk_id = {groupi[0]['id']} OR vk_id = {useri[0]['id']})")
+                        subs = cur.fetchall()
+                dbcon.close
 
-                messages = []
-                messages.append(await ctx.send(embed=group_embed))
-                messages.append(await ctx.send('React with ⬆️ for **group** wall\nReact with ❌ for cancel\nReact with ⬇️ for **user** wall'))
-                messages.append(await ctx.send(embed=user_embed))
+                if len(subs) == 2:
+                    group_embed = group_compile_embed(groupi[0])
+                    user_embed = user_compile_embed(useri[0])
 
-                for emoji in ['⬆️', '❌', '⬇️']:
-                    await messages[1].add_reaction(emoji)
+                    messages = []
+                    messages.append(await ctx.send(embed=group_embed))
+                    messages.append(await ctx.send('React with ⬆️ for **group** wall\nReact with ❌ for cancel\nReact with ⬇️ for **user** wall'))
+                    messages.append(await ctx.send(embed=user_embed))
+
+                    for emoji in ['⬆️', '❌', '⬇️']:
+                        await messages[1].add_reaction(emoji)
+                    
+                    try:
+                        r, u = await client.wait_for('reaction_add', check=lambda r, u: u == ctx.author and r.message == messages[1] and r.emoji in ['⬆️', '❌', '⬇️'], timeout=120.0)
+                    except asyncio.TimeoutError:
+                        await ctx.channel.delete_messages(messages)
+                        messages = []
+                        await ctx.send('❌ Cancelled (timeout)')
+                    else:
+                        await ctx.channel.delete_messages(messages)
+                        messages = []
+
+                        if r.emoji == '⬆️':
+                            await setup(ctx, 'del', messages, webhook_channel, 'g', groupi[0], group_embed)
+
+                        elif r.emoji == '⬇️':
+                            await setup(ctx, 'del', messages, webhook_channel, 'u', useri[0], user_embed)
+
+                        else:
+                            await ctx.send('❌ Cancelled')
                 
-                try:
-                    r, u = await client.wait_for('reaction_add', check=lambda r, u: u == ctx.author and r.message == messages[1] and r.emoji in ['⬆️', '❌', '⬇️'], timeout=120.0)
-                except asyncio.TimeoutError:
-                    await ctx.channel.delete_messages(messages)
-                    messages = []
-                    await ctx.send('❌ Cancelled (timeout)')
-                else:
-                    await ctx.channel.delete_messages(messages)
-                    messages = []
+                elif len(subs) == 1:
+                    if subs[0]['vk_type'] == 'g':
+                        group_embed = group_compile_embed(groupi[0])
 
-                    if r.emoji == '⬆️':
+                        messages = []
+
                         await setup(ctx, 'del', messages, webhook_channel, 'g', groupi[0], group_embed)
+                    elif subs[0]['vk_type'] == 'u': 
+                        user_embed = user_compile_embed(useri[0])
 
-                    elif r.emoji == '⬇️':
+                        messages = []
+
                         await setup(ctx, 'del', messages, webhook_channel, 'u', useri[0], user_embed)
 
-                    else:
-                        await ctx.send('❌ Cancelled')
-            
-            elif len(subs) == 1:
-                if subs[0]['vk_type'] == 'g':
+                else: raise notSub
+
+            elif not 'deactivated' in groupi[0]:
+                with psycopg2.connect(host=settings['dbHost'], dbname=settings['dbName'], user=settings['dbUser'], password=settings['dbPassword']) as dbcon:
+                    with dbcon.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
+                        cur.execute(f"SELECT vk_id, vk_type FROM subscription WHERE channel_id = {webhook_channel.id} AND vk_id = {groupi[0]['id']}")
+                        subs = cur.fetchall()
+                dbcon.close
+
+                if len(subs) == 1:
                     group_embed = group_compile_embed(groupi[0])
 
                     messages = []
 
                     await setup(ctx, 'del', messages, webhook_channel, 'g', groupi[0], group_embed)
-                elif subs[0]['vk_type'] == 'u': 
+
+                else: raise notSub
+
+            elif not 'deactivated' in useri[0]:
+                with psycopg2.connect(host=settings['dbHost'], dbname=settings['dbName'], user=settings['dbUser'], password=settings['dbPassword']) as dbcon:
+                    with dbcon.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
+                        cur.execute(f"SELECT vk_id, vk_type FROM subscription WHERE channel_id = {webhook_channel.id} AND vk_id = {useri[0]['id']}")
+                        subs = cur.fetchall()
+                dbcon.close
+
+                if len(subs) == 1:
                     user_embed = user_compile_embed(useri[0])
 
                     messages = []
 
                     await setup(ctx, 'del', messages, webhook_channel, 'u', useri[0], user_embed)
 
-            else: raise notSub
+                else: raise notSub
 
-        elif not 'deactivated' in groupi[0]:
-            with psycopg2.connect(host=settings['dbHost'], dbname=settings['dbName'], user=settings['dbUser'], password=settings['dbPassword']) as dbcon:
-                with dbcon.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
-                    cur.execute(f"SELECT vk_id, vk_type FROM subscription WHERE channel_id = {webhook_channel.id} AND vk_id = {groupi[0]['id']}")
-                    subs = cur.fetchall()
-            dbcon.close
-
-            if len(subs) == 1:
-                group_embed = group_compile_embed(groupi[0])
-
-                messages = []
-
-                await setup(ctx, 'del', messages, webhook_channel, 'g', groupi[0], group_embed)
-
-            else: raise notSub
-
-        elif not 'deactivated' in useri[0]:
-            with psycopg2.connect(host=settings['dbHost'], dbname=settings['dbName'], user=settings['dbUser'], password=settings['dbPassword']) as dbcon:
-                with dbcon.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
-                    cur.execute(f"SELECT vk_id, vk_type FROM subscription WHERE channel_id = {webhook_channel.id} AND vk_id = {useri[0]['id']}")
-                    subs = cur.fetchall()
-            dbcon.close
-
-            if len(subs) == 1:
-                user_embed = user_compile_embed(useri[0])
-
-                messages = []
-
-                await setup(ctx, 'del', messages, webhook_channel, 'u', useri[0], user_embed)
-
-            else: raise notSub
-
-        else: raise vkWallBlockedError
+            else: raise vkWallBlockedError
 
 @delete.error
 async def subscriptions_delete_error(ctx, error):

@@ -1,12 +1,13 @@
 import os
 settings = {
     #Discord
-    'bot': 'Notifications',
+    'bot': 'Posthound',
     'discordToken': os.environ.get("TOKEN"),
 
     #VK
     'vkAppId': 7797033,
     'vkSecureKey': os.environ.get("VK_SECURE_KEY"),
+    'vkServiceKey': os.environ.get("VK_SERVICE_KEY"),
     'vkRedirectUri': 'https://posthound.herokuapp.com/oauth2/redirect',
 
     #Postgres
