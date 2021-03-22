@@ -30,6 +30,7 @@ class vkWallBlockedError(Exception): pass
 class subExists(Exception): pass
 class noSubs(Exception): pass
 class notSub(Exception): pass
+class NotAuthenticated(Exception): pass
 
 
 #FUNCTIONS
@@ -45,7 +46,7 @@ def get_prefix(client, message):
     else: 
         return prefix
 
-def authentificate(token):
+def authenticate(token):
     session = vk.AuthSession(access_token=token)
     vkapi = vk.API(session)
     return vkapi
@@ -186,7 +187,7 @@ def add_command_and_example(ctx, error_embed, command, example):
     )
 
 def get_vk_info():
-    vkapi = authentificate(settings['vkServiceKey'])
+    vkapi = authenticate(settings['vkServiceKey'])
     vk_info = vkapi.groups.getById(group_id=22822305, v='5.130')
     vk = {'name': vk_info[0]['name'], 'photo': vk_info[0]['photo_200']}
     return vk
@@ -366,16 +367,35 @@ async def subscriptions(ctx):
     vk = get_vk_info()
 
     embed = discord.Embed(
-        title = 'Authentification',
+        title = 'Authentication',
         url = f'https://posthound.herokuapp.com/oauth2/login?server_id={Fernet(key).encrypt(str(ctx.guild.id).encode()).decode()}&key_uuid={key_uuid}',
-        description = 'Authentificate with your VK profile to be able to subscribe to a VK wall.\n\n**Please, do not pass any arguments from link or link itself to 3rd parties. __It may result in security flaws.__**',
+        description = 'Authenticate with your VK profile to be able to subscribe to a VK wall.\n\n**Please, do not pass any arguments from link or link itself to 3rd parties. __It may result in security flaws.__**',
         colour = color
     )
     embed.set_thumbnail(url=vk['photo'])
     embed.set_footer(text=vk['name'], icon_url=vk['photo'])
 
-    await ctx.send('Check your DM for an authentification link!')
+    await ctx.send('Check your DM for an authentication link!')
     await ctx.author.send(embed=embed)
+
+@subscriptions.error
+async def subscriptions_error(ctx, error):
+    error_embed = None
+    dm = False
+
+    if isinstance(error, commands.BotMissingPermissions):
+        if 'Send Messages' in str(error):
+            dm = True
+            error_embed = set_error_embed(f'Bot is missing permission(s).\n\n> {error}')
+            await ctx.message.author.send(embed=error_embed)
+        else:
+            error_embed = set_error_embed(f'Bot is missing permission(s).\n\n> {error}')
+
+    elif isinstance(error, commands.MissingPermissions):
+        error_embed = set_error_embed(f'You are missing permission(s).\n\n> {error}')
+
+    if error_embed != None and dm == False:
+        await ctx.send(embed=error_embed)
 
 @subscriptions.command(aliases=['a'])
 @bot_has_permissions(manage_webhooks=True, add_reactions=True, manage_messages=True, read_message_history=True, send_messages=True)
@@ -393,10 +413,9 @@ async def add(ctx, vk_id: str=None, webhook_channel: discord.TextChannel=None):
                 token = cur.fetchone()['token']
         dbcon.close
 
-        if token == None: 
-            await subscriptions(ctx)
+        if token == None: raise NotAuthenticated
         else: 
-            vkapi = authentificate(token)
+            vkapi = authenticate(token)
 
             try: groupi = vkapi.groups.getById(group_id=vk_id, fields="status,description,members_count", v='5.130')
             except Exception as error:
@@ -482,7 +501,10 @@ async def subscriptions_add_error(ctx, error):
     elif isinstance(error, commands.CommandInvokeError):
         error = error.original
 
-        if isinstance(error, channelNotSpecifiedError):
+        if isinstance(error, NotAuthenticated):
+            error_embed = set_error_embed(f'You aren\'t authenticated.\n\n> Run `sub` command to link your VK profile.')
+
+        elif isinstance(error, channelNotSpecifiedError):
             error_embed = set_error_embed(f'`[Channel Mention]` is not specified.\n\n> Please, specify `[Channel Mention]` as **Channel Mention**.')
             add_command_and_example(ctx, error_embed, f'`subscriptions add [Channel Mention] [VK Wall]`', f'.s a {ctx.message.channel.mention} 1')
 
@@ -523,10 +545,9 @@ async def information(ctx, channel: discord.TextChannel=None):
                 token = cur.fetchone()['token']
         dbcon.close
 
-        if token == None: 
-            await subscriptions(ctx)
+        if token == None: raise NotAuthenticated
         else: 
-            vkapi = authentificate(token)
+            vkapi = authenticate(token)
 
             with psycopg2.connect(host=settings['dbHost'], dbname=settings['dbName'], user=settings['dbUser'], password=settings['dbPassword']) as dbcon:
                 with dbcon.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
@@ -602,7 +623,10 @@ async def susbcriptions_information_error(ctx, error):
 
     elif isinstance(error, commands.CommandInvokeError):
         error = error.original
-        if isinstance(error, noSubs):
+        if isinstance(error, NotAuthenticated):
+            error_embed = set_error_embed(f'You aren\'t authenticated.\n\n> Run `sub` command to link your VK profile.')
+
+        elif isinstance(error, noSubs):
             error_embed = set_error_embed(f'No subscriptions for this channel.')
 
         elif isinstance(error, channelNotSpecifiedError):
@@ -635,10 +659,9 @@ async def delete(ctx, vk_id: str=None, webhook_channel: discord.TextChannel=None
                 token = cur.fetchone()['token']
         dbcon.close
 
-        if token == None: 
-            await subscriptions(ctx)
+        if token == None: raise NotAuthenticated
         else: 
-            vkapi = authentificate(token)
+            vkapi = authenticate(token)
 
             try: groupi = vkapi.groups.getById(group_id=vk_id, fields="status,description,members_count", v='5.130')
             except Exception as error:
@@ -764,7 +787,10 @@ async def subscriptions_delete_error(ctx, error):
     elif isinstance(error, commands.CommandInvokeError):
         error = error.original
 
-        if isinstance(error, channelNotSpecifiedError):
+        if isinstance(error, NotAuthenticated):
+            error_embed = set_error_embed(f'You aren\'t authenticated.\n\n> Run `sub` command to link your VK profile.')
+
+        elif isinstance(error, channelNotSpecifiedError):
             error_embed = set_error_embed(f'`[Channel Mention]` is not specified.\n\n> Please, specify `[Channel Mention]` as **Channel Mention**.')
             add_command_and_example(ctx, error_embed, f'`subscriptions delete [Channel Mention] [VK Wall]`', f'.s d {ctx.message.channel.mention} 1')
 
