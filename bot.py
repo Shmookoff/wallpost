@@ -359,24 +359,19 @@ async def prefix_set_error(ctx, error):
 async def subscriptions(ctx):
     with psycopg2.connect(host=settings['dbHost'], dbname=settings['dbName'], user=settings['dbUser'], password=settings['dbPassword']) as dbcon:
         with dbcon.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
-            cur.execute(f"SELECT key, key_uuid FROM server WHERE id = {ctx.guild.id}")
-            res = cur.fetchone()
-            key, key_uuid = res['key'], res['key_uuid']
+            cur.execute(f"SELECT vk_id, token FROM server WHERE id = {ctx.guild.id}")
+            vk_profile = cur.fetchone()
+            vk_id, vk_token = vk_profile['vk_id'], vk_profile['token']
     dbcon.close
 
-    vk = get_vk_info()
+    if vk_id == None or vk_token == None: 
+        await sub_set(ctx)
 
-    embed = discord.Embed(
-        title = 'Authentication',
-        url = f'https://posthound.herokuapp.com/oauth2/login?server_id={Fernet(key).encrypt(str(ctx.guild.id).encode()).decode()}&key_uuid={key_uuid}',
-        description = 'Authenticate with your VK profile to be able to subscribe to a VK wall.\n\n**Please, do not pass any arguments from link or link itself to 3rd parties. __It may result in security flaws.__**',
-        colour = color
-    )
-    embed.set_thumbnail(url=vk['photo'])
-    embed.set_footer(text=vk['name'], icon_url=vk['photo'])
-
-    await ctx.send('Check your DM for an authentication link!')
-    await ctx.author.send(embed=embed)
+    else:
+        vkapi = authenticate(vk_token)
+        user_embed = user_compile_embed(vkapi.users.get(user_ids=vk_id, fields='photo_max,status,screen_name,followers_count,counters', v='5.130')[0])
+        await ctx.send(f'This is the account that is linked to **{ctx.guild.name}**.\nYou can change it with `sub set` command.', embed=user_embed)
+      
 
 @subscriptions.error
 async def subscriptions_error(ctx, error):
@@ -392,7 +387,58 @@ async def subscriptions_error(ctx, error):
             error_embed = set_error_embed(f'Bot is missing permission(s).\n\n> {error}')
 
     elif isinstance(error, commands.MissingPermissions):
-        error_embed = set_error_embed(f'You are missing permission(s).\n\n> {error}')
+        error_embed = set_error_embed(f'You are missing permission(s).\n\n> {error}')   
+
+    else: 
+        print(str(error), str(error.original))
+        traceback.print_exception(type(error), error, error.__traceback__, file=sys.stderr)
+
+    if error_embed != None and dm == False:
+        await ctx.send(embed=error_embed)
+
+@subscriptions.command(aliases=['s', 'set'])
+@has_permissions(administrator=True)
+async def sub_set(ctx):
+    with psycopg2.connect(host=settings['dbHost'], dbname=settings['dbName'], user=settings['dbUser'], password=settings['dbPassword']) as dbcon:
+        with dbcon.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
+            cur.execute(f"SELECT key, key_uuid FROM server WHERE id = {ctx.guild.id}")
+            res = cur.fetchone()
+            key, key_uuid = res['key'], res['key_uuid']
+    dbcon.close
+
+    vk = get_vk_info()
+
+    embed = discord.Embed(
+        title = 'Authentication',
+        url = f'https://posthound.herokuapp.com/oauth2/login?server_id={Fernet(key).encrypt(str(ctx.guild.id).encode()).decode()}&key_uuid={key_uuid}',
+        description = 'Authenticate with your VK profile to be able to interact with VK walls.\n\n**Please, do not pass any arguments from link or link itself to 3rd parties. __It may result in security flaws.__**',
+        colour = color
+    )
+    embed.set_thumbnail(url=vk['photo'])
+    embed.set_footer(text=vk['name'], icon_url=vk['photo'])
+
+    await ctx.send('Check your DM for an authentication link!')
+    await ctx.author.send(embed=embed)
+
+@sub_set.error
+async def sub_set_error(ctx, error):
+    error_embed = None
+    dm = False
+
+    if isinstance(error, commands.BotMissingPermissions):
+        if 'Send Messages' in str(error):
+            dm = True
+            error_embed = set_error_embed(f'Bot is missing permission(s).\n\n> {error}')
+            await ctx.message.author.send(embed=error_embed)
+        else:
+            error_embed = set_error_embed(f'Bot is missing permission(s).\n\n> {error}')
+
+    elif isinstance(error, commands.MissingPermissions):
+        error_embed = set_error_embed(f'You are missing permission(s).\n\n> {error}')   
+
+    else: 
+        print(str(error), str(error.original))
+        traceback.print_exception(type(error), error, error.__traceback__, file=sys.stderr)
 
     if error_embed != None and dm == False:
         await ctx.send(embed=error_embed)
@@ -519,7 +565,7 @@ async def subscriptions_add_error(ctx, error):
             error_embed = set_error_embed(f'Maximum number of webhooks reached (10).\n> Try removing a webhook from {ctx.webhook_channel.mention}.')
 
         elif isinstance(error, subExists):
-            error_embed = set_error_embed(f'{ctx.args[1].mention} already subscribed to this wall.')
+            error_embed = set_error_embed(f'{ctx.webhook_channel.mention} already subscribed to this wall.')
 
         else:
             print(error)
