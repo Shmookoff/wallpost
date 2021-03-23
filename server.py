@@ -25,11 +25,8 @@ def get_code():
     try: response = requests.post(f'https://oauth.vk.com/access_token?client_id={settings["vkAppId"]}&client_secret={settings["vkSecureKey"]}&redirect_uri={settings["vkRedirectUri"]}&code={code}')
     except Exception as error: print(f'\n!!! ERROR !!!\n{error}\n!!! ERROR !!!\n')
     else:
-        print(request.args.get('state'))
         data = json.loads(request.args.get('state'))
         response = response.json()
-        print(settings['vkRedirectUri'])
-        print(response)
         with psycopg2.connect(host=settings['dbHost'], dbname=settings['dbName'], user=settings['dbUser'], password=settings['dbPassword']) as dbcon:
             with dbcon.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
                 cur.execute("SELECT key FROM server WHERE key_uuid = %s", (data['key_uuid'],))
