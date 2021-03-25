@@ -1,2 +1,2 @@
-bot: py -m app.bot
+bot: python -m app.bot
 web: gunicorn app.server:app
