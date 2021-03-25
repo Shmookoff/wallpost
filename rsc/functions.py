@@ -6,7 +6,7 @@ import vk
 import asyncio
 import aiohttp
 
-from rsc.config import psql_sets, vk_sets
+from rsc.config import sets, psql_sets, vk_sets
 from rsc.errors import subExists
 
 def get_prefix(client, message):
@@ -30,7 +30,7 @@ def group_compile_embed(group):
     group_embed = discord.Embed(
         title = group['name'],
         url = f'https://vk.com/public{group["id"]}',
-        color = vars["embedColor"]
+        color = sets["embedColor"]
     )
     group_embed.set_thumbnail(url = group['photo_200'])
     group_embed.add_field(
@@ -67,7 +67,7 @@ def user_compile_embed(user):
     user_embed = discord.Embed(
         title = f'{user["first_name"]} {user["last_name"]}',
         url = f'https://vk.com/id{user["id"]}',
-        color = vars["embedColor"]
+        color = sets["embedColor"]
     )
     user_embed.set_thumbnail(url = user['photo_max'])
     user_embed.add_field(
@@ -146,7 +146,7 @@ async def setup(ctx, client, action, messages, channel, wall, walli, embed):
             await ctx.send('❌ Cancelled')
 
 def set_error_embed(d):
-    error_embed = discord.Embed(title=vars["errorTitle"], color=vars["errorColor"], description=d)
+    error_embed = discord.Embed(title=sets["errorTitle"], color=sets["errorColor"], description=d)
     return error_embed
 
 def add_command_and_example(ctx, error_embed, command, example):

@@ -6,7 +6,7 @@ import psycopg2
 import traceback
 import sys
 
-from rsc.config import vars, psql_sets
+from rsc.config import psql_sets
 from rsc.functions import set_error_embed, add_command_and_example
 from rsc.errors import prefixGreaterThan3
 

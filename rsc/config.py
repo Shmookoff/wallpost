@@ -1,6 +1,6 @@
 import os
 
-vars = {
+sets = {
     "embedTitle": "Open post",
     "embedColor": 2590709,
 

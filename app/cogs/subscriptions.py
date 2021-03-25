@@ -10,7 +10,7 @@ from vk.exceptions import VkAPIError
 import traceback
 import sys
 
-from rsc.config import vars, psql_sets
+from rsc.config import sets, psql_sets
 from rsc.functions import *
 from rsc.errors import *
 
@@ -76,7 +76,7 @@ class Subscriptions(commands.Cog):
             title = 'Authentication',
             url = f'https://posthound.herokuapp.com/oauth2/login?server_id={Fernet(key).encrypt(str(ctx.guild.id).encode()).decode()}&key_uuid={key_uuid}',
             description = 'Authenticate with your VK profile to be able to interact with VK walls.\n\n**Please, do not pass any arguments from link or link itself to 3rd parties. __It may result in security flaws.__**',
-            color = vars["embedColor"]
+            color = sets["embedColor"]
         )
         embed.set_thumbnail(url=vk['photo'])
         embed.set_footer(text=vk['name'], icon_url=vk['photo'])
@@ -261,7 +261,7 @@ class Subscriptions(commands.Cog):
             embed = discord.Embed(
                 title = f'Wall subscriptions',
                 description = f'**for **{channel.mention}** channel:**',
-                color = vars["embedColor"]
+                color = sets["embedColor"]
             )
 
             table = texttable.Texttable(max_width=0)

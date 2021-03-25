@@ -4,7 +4,7 @@ from discord.ext import commands
 import traceback
 import sys
 
-from rsc.config import vars
+from rsc.config import sets
 
 class Help(commands.Cog):
     def __init__(self, client):
@@ -17,7 +17,7 @@ class Help(commands.Cog):
         help_embed = discord.Embed(
             title = 'Help',
             description = f'Use `help (Command)` to show help for a command.',
-            color = vars["embedColor"]
+            color = sets["embedColor"]
         )
 
         help_embed.add_field(
