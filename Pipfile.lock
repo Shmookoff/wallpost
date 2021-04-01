@@ -1,7 +1,7 @@
 {
     "_meta": {
         "hash": {
-            "sha256": "09f24a0a720d33aa256e3732cc65f4a7d55efcf5478197df9764b32b33c4f08a"
+            "sha256": "ba67f689b4c0a5defbcc49e40a0644a76609cdc64e03e03a9f2f088f3d49f84a"
         },
         "pipfile-spec": 6,
         "requires": {
@@ -58,6 +58,21 @@
             ],
             "index": "pypi",
             "version": "==3.7.4.post0"
+        },
+        "aiohttp-socks": {
+            "hashes": [
+                "sha256:b95dcfba3740c8499f4ff633846d72108459d25650ebc1ae8b299cb817088013",
+                "sha256:db7aa48c0758ee45d7dbc1fde499912ec6fb77eab77a6e2808825d1f41d4e300"
+            ],
+            "version": "==0.6.0"
+        },
+        "aiovk": {
+            "hashes": [
+                "sha256:0403ae10b9b8b3c4f1dafa5a4b7ecc474e67a8520954891ac437c7ae75987845",
+                "sha256:ddfe732440ed4b1aae7f3ab9b698f85e6889037b3c89b5a15aab27afc9332733"
+            ],
+            "index": "pypi",
+            "version": "==4.0.0"
         },
         "async-timeout": {
             "hashes": [
@@ -152,6 +167,14 @@
             "index": "pypi",
             "version": "==7.1.2"
         },
+        "colorama": {
+            "hashes": [
+                "sha256:5941b2b48a20143d2267e95b1c2a7603ce057ee39fd88e7329b0c292aa16869b",
+                "sha256:9f47eda37229f68eee03b24b9748937c7dc3868f906e8ba69fbcbdd3bc5dc3e2"
+            ],
+            "index": "pypi",
+            "version": "==0.4.4"
+        },
         "cryptography": {
             "hashes": [
                 "sha256:066bc53f052dfeda2f2d7c195cf16fb3e5ff13e1b6b7415b468514b40b381a5b",
@@ -177,6 +200,14 @@
             ],
             "index": "pypi",
             "version": "==1.0.1"
+        },
+        "discord-webhook": {
+            "hashes": [
+                "sha256:548568b55ad32677f58b8d113be339ae83087b262f4e8438c96efe2bd0c48a19",
+                "sha256:eb68298de3c4fd98d476d3e2e7779959b65cb30da7c6e6d227fab1145c22c58f"
+            ],
+            "index": "pypi",
+            "version": "==0.12.0"
         },
         "discord.py": {
             "hashes": [
@@ -327,6 +358,14 @@
             "index": "pypi",
             "version": "==5.1.0"
         },
+        "nest-asyncio": {
+            "hashes": [
+                "sha256:76d6e972265063fe92a90b9cc4fb82616e07d586b346ed9d2c89a4187acea39c",
+                "sha256:afc5a1c515210a23c461932765691ad39e8eba6551c055ac8d5546e69250d0aa"
+            ],
+            "index": "pypi",
+            "version": "==1.5.1"
+        },
         "psycopg2": {
             "hashes": [
                 "sha256:00195b5f6832dbf2876b8bf77f12bdce648224c89c880719c745b90515233301",
@@ -355,6 +394,16 @@
             ],
             "index": "pypi",
             "version": "==2.20"
+        },
+        "python-socks": {
+            "extras": [
+                "asyncio"
+            ],
+            "hashes": [
+                "sha256:7d0ef2578cead9f762b71317d25a6c118fabaf79535555e75b3e102f5158ddd8",
+                "sha256:9f12e8fe78629b87543fad0e4ea0ccf103a4fad6a7872c5d0ecb36d9903fa548"
+            ],
+            "version": "==1.2.4"
         },
         "requests": {
             "hashes": [
@@ -388,13 +437,6 @@
             ],
             "index": "pypi",
             "version": "==1.26.4"
-        },
-        "vk": {
-            "hashes": [
-                "sha256:57bde87a95c57b5a9fa1761ad8e5a8a36beeb79b096346cfe5fbcd7fc56cca26"
-            ],
-            "index": "pypi",
-            "version": "==2.0.2"
         },
         "werkzeug": {
             "hashes": [

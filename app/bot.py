@@ -25,7 +25,7 @@ async def on_ready():
             cur.execute("SELECT id FROM server")
             guilds_in_db = cur.fetchall()
         guilds_connected = client.guilds
-
+        
         guilds_connected_array = []
         guilds_in_db_array = []
 
@@ -41,7 +41,7 @@ async def on_ready():
         for guild in guilds_in_db_array:
             if not guild in guilds_connected_array:
                 with dbcon.cursor() as cur:
-                    cur.execute("DELETE FROM server WHERE id = %s", (guild))
+                    cur.execute("DELETE FROM server WHERE id = %s", (guild,))
     dbcon.close()
 
     print('Ready!')

@@ -7,3 +7,4 @@ class subExists(Exception): pass
 class noSubs(Exception): pass
 class notSub(Exception): pass
 class NotAuthenticated(Exception): pass
+class WallClosed(Exception): pass

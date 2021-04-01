@@ -1,13 +1,21 @@
 import discord
 from discord.ext import commands
 
+from discord_webhook import DiscordEmbed
+
 import psycopg2
-import vk
 import asyncio
 import aiohttp
+from datetime import datetime
+
+from aiovk.sessions import TokenSession
+from aiovk.api import API as VKAPI
+
+import traceback
+import sys
 
 from rsc.config import sets, psql_sets, vk_sets
-from rsc.errors import subExists
+from rsc.errors import subExists, WallClosed
 
 def get_prefix(client, message):
     with psycopg2.connect(host=psql_sets["host"], dbname=psql_sets["name"], user=psql_sets["user"], password=psql_sets["password"]) as dbcon:
@@ -20,11 +28,6 @@ def get_prefix(client, message):
         return '.'
     else: 
         return prefix
-
-def authenticate(token):
-    session = vk.AuthSession(access_token=token)
-    vkapi = vk.API(session)
-    return vkapi
 
 def group_compile_embed(group):
     group_embed = discord.Embed(
@@ -94,14 +97,14 @@ def user_compile_embed(user):
         )
     return user_embed
 
-async def setup(ctx, client, action, messages, channel, wall, walli, embed):
+async def setup_wall(ctx, action, messages, channel, wall, walli, embed):
     messages.append(await ctx.send(f'Is this the wall you requested?\nReact with ✅ or ❌', embed=embed))
 
     for emoji in ['✅', '❌']:
         await messages[0].add_reaction(emoji)
 
     try:
-        r, u = await client.wait_for('reaction_add', check=lambda r, u: u == ctx.author and r.message == messages[0] and r.emoji in ['✅', '❌'], timeout=120.0)
+        r, u = await ctx.bot.wait_for('reaction_add', check=lambda r, u: u == ctx.author and r.message == messages[0] and r.emoji in ['✅', '❌'], timeout=120.0)
     except asyncio.TimeoutError:
         await ctx.channel.delete_messages(messages)
         messages = []
@@ -113,17 +116,38 @@ async def setup(ctx, client, action, messages, channel, wall, walli, embed):
 
             if wall == "g":
                 name = walli['name']
+                if not walli['is_closed'] == 0 and walli['is_member'] == 0:
+                    raise WallClosed
             elif wall == "u":
                 name = f'{walli["first_name"]} {walli["last_name"]}'
+                if walli['can_access_closed'] == False:
+                    print(walli)
+                    raise WallClosed
             
             if action == 'add':
+
                 with psycopg2.connect(host=psql_sets["host"], dbname=psql_sets["name"], user=psql_sets["user"], password=psql_sets["password"]) as dbcon:
                     with dbcon.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
                         cur.execute(f"SELECT EXISTS(SELECT 1 FROM subscription WHERE vk_id = {walli['id']} AND vk_type = \'{wall}\' AND channel_id = {channel.id})")
                         if cur.fetchone()['exists'] == False:
-                            webhook = await channel.create_webhook(name=name)
-                            cur.execute(f"INSERT INTO channel (id, server_id) VALUES({channel.id}, {ctx.guild.id}) ON CONFLICT DO NOTHING")
-                            cur.execute(f"INSERT INTO subscription (vk_id, vk_type, webhook_url, channel_id) VALUES({walli['id']}, \'{wall}\', \'{webhook.url}\', {channel.id})")
+
+                            # if wall == 'g':
+                            #     if walli['is_admin'] == 1:
+                            #         if walli['admin_level'] == 3: 
+                            #             messages.append(await ctx.send(f'You are the administrator of **{name}**. You can enable \"long-poll\" reposting.\nThis means bla bla bla WIP'))
+                            #             # vkapi.groups.setLongPollSettings(enabled=1, wall_post_new=1, v='5.130')
+                            #             # long_poll = True
+                            #             long_poll = False
+                            #         else: long_poll = False
+                            #     else: long_poll = False
+                            # long_poll = False
+
+                            cur.execute("SELECT EXISTS(SELECT 1 FROM channel WHERE id = %s)", (channel.id,))
+                            if cur.fetchone()['exists'] == False:
+                                webhook = await channel.create_webhook(name="WallPost VK")
+                                cur.execute("INSERT INTO channel (id, webhook_url, server_id) VALUES(%s, %s, %s)", (channel.id, webhook.url, ctx.guild.id))
+
+                            cur.execute("INSERT INTO subscription (vk_id, last_post_id, vk_type, long_poll, channel_id) VALUES(%s, %s, %s, %s, %s)", (walli['id'], 0, wall, False, channel.id))
                         else: raise subExists
                 dbcon.close()
                 
@@ -132,10 +156,14 @@ async def setup(ctx, client, action, messages, channel, wall, walli, embed):
             if action == 'del':
                 with psycopg2.connect(host=psql_sets["host"], dbname=psql_sets["name"], user=psql_sets["user"], password=psql_sets["password"]) as dbcon:
                     with dbcon.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
-                        cur.execute(f"SELECT webhook_url FROM subscription WHERE channel_id = {channel.id} AND vk_id = {walli['id']} AND vk_type = \'{wall}\'")
-                        async with aiohttp.ClientSession() as session:
-                            await discord.Webhook.from_url(url=cur.fetchone()['webhook_url'], adapter=discord.AsyncWebhookAdapter(session)).delete()
                         cur.execute(f"DELETE FROM subscription WHERE channel_id = {channel.id} AND vk_id = {walli['id']} AND vk_type = \'{wall}\'")
+
+                        cur.execute("SELECT EXISTS(SELECT 1 FROM subscription WHERE channel_id = %s)", (channel.id,))
+                        if cur.fetchone()['exists'] == False:
+                            cur.execute("SELECT webhook_url FROM channel WHERE id = %s", (channel.id,))
+                            async with aiohttp.ClientSession() as session:
+                                await discord.Webhook.from_url(url=cur.fetchone()['webhook_url'], adapter=discord.AsyncWebhookAdapter(session)).delete()
+                            cur.execute("DELETE FROM channel WHERE id = %s", (channel.id,))
                 dbcon.close()
 
                 await ctx.send(f'✅ Successfully unsubscrubed {channel.mention} from **{name}** wall!')
@@ -161,8 +189,65 @@ def add_command_and_example(ctx, error_embed, command, example):
         inline = False
     )
 
-def get_vk_info():
-    vkapi = authenticate(vk_sets["serviceKey"])
-    vk_info = vkapi.groups.getById(group_id=22822305, v='5.130')
-    vk = {'name': vk_info[0]['name'], 'photo': vk_info[0]['photo_200']}
-    return vk
+async def get_vk_info():
+    async with TokenSession(vk_sets["serviceKey"]) as ses:
+        vkapi = VKAPI(ses)
+        vk_info = await vkapi.groups.getById(group_id=22822305, v='5.130')
+    return {'name': vk_info[0]['name'], 'photo': vk_info[0]['photo_200']}
+
+def compile_post_embed(post, vk, wall1=None):
+    items = post['items'][0]
+    
+    embed = DiscordEmbed(
+        title = sets["embedTitle"],
+        url = f'https://vk.com/wall{items["from_id"]}_{items["id"]}',
+        description = items['text'],
+        timestamp = datetime.utcfromtimestamp(items['date']).isoformat(),
+        color = sets["embedColor"]
+    )
+
+    if wall1 == None:
+        if items['owner_id'] > 0:
+            author = post['profiles'][0]
+            embed.set_author(
+            name = f'{author["first_name"]} {author["last_name"]}',
+            url = f'https://vk.com/id{author["id"]}',
+            icon_url = author['photo_max']
+            )
+        else:
+            author = post['groups'][0] 
+            embed.set_author(
+            name = author['name'],
+            url = f'https://vk.com/club{author["id"]}',
+            icon_url = author['photo_max']
+            )
+    else:
+        embed.set_author(
+            name = wall1['name'],
+            url = f'https://vk.com/club{wall1["id"]}',
+            icon_url = wall1['photo_max']
+        )
+    
+    if 'attachments' in items:                              
+        for attachment in items['attachments']:             
+            if 'photo' in attachment:                       
+                is_there_a_photo = True                     
+                hw = 0                                      
+                image_url = ''                              
+                for size in attachment['photo']['sizes']:   
+                    if size['width']*size['height'] > hw:   
+                        hw = size['width']*size['height']   
+                        image_url = size['url']             
+                embed.set_image(url = image_url)
+                break
+    
+    embed.set_footer(text=vk['name'], icon_url=vk['photo'])
+
+    if 'copy_history' in items: with_repost = items['copy_history'][0]
+    else: with_repost = None
+
+    return embed, with_repost
+
+def print_traceback(error):
+    print(str(error), str(error.original))
+    traceback.print_exception(type(error), error, error.__traceback__, file=sys.stderr)

@@ -5,7 +5,6 @@ name = "pypi"
 
 [packages]
 discord = "==1.0.1"
-vk = "==2.0.2"
 psycopg2 = "==2.8.6"
 texttable = "==1.6.3"
 asyncio = "==3.4.3"
@@ -31,6 +30,10 @@ Flask = "==1.1.2"
 Jinja2 = "==2.11.3"
 MarkupSafe = "==1.1.1"
 Werkzeug = "==1.0.1"
+discord-webhook = "*"
+aiovk = "*"
+nest-asyncio = "*"
+colorama = "*"
 
 [dev-packages]
 
