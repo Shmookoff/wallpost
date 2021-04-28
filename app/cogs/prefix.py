@@ -8,7 +8,7 @@ import sys
 
 from rsc.config import psql_sets
 from rsc.functions import set_error_embed, add_command_and_example
-from rsc.errors import prefixGreaterThan3
+from rsc.exceptions import prefixGreaterThan3
 
 class Prefix(commands.Cog):
     def __init__(self, client):
