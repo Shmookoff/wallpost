@@ -317,7 +317,11 @@ class Subscriptions(commands.Cog):
         if channel == None: channel = ctx.channel
         ctx.webhook_channel = channel
 
-        subs = Server.find_by_args(ctx.guild.id).find_channel(channel.id).subscriptions
+        chn = Server.find_by_args(ctx.guild.id).find_channel(channel.id)
+        if chn is None:
+            raise noSubs
+        else:
+            subs = chn.subscriptions
         if len(subs) == 0: raise noSubs
 
         embed = discord.Embed(
@@ -409,7 +413,10 @@ class Subscriptions(commands.Cog):
         if vk_id == 0: raise vkWallBlockedError
         if webhook_channel == None: webhook_channel = ctx.channel
         ctx.webhook_channel = webhook_channel
+        chn = Server.find_by_args(ctx.guild.id).find_channel(webhook_channel.id)
+        if chn is None: raise notSub
         messages = []
+
 
 
         async with TokenSession(vk_token) as ses:
@@ -426,7 +433,7 @@ class Subscriptions(commands.Cog):
                     useri = [{'deactivated': True}]
 
         if not 'deactivated' in groupi[0] and not 'deactivated' in useri[0]:
-            subs = Server.find_by_args(ctx.guild.id).find_channel(webhook_channel.id).find_subs(groupi[0]['id'])
+            subs = chn.find_subs(groupi[0]['id'])
             if len(subs) == 0: raise notSub
 
             elif len(subs) == 2:
@@ -462,18 +469,20 @@ class Subscriptions(commands.Cog):
             elif len(subs) == 1:
                 if subs[0].type == 'g':
                     wall_embed = group_compile_embed(groupi[0])
+                    walli = groupi[0]
                 elif subs[0].type == 'u': 
                     wall_embed = user_compile_embed(useri[0])
-                await self.setup_wall(ctx, 'del', messages, webhook_channel, subs[0].type, useri[0], wall_embed)
+                    walli = useri[0]
+                await self.setup_wall(ctx, 'del', messages, webhook_channel, subs[0].type, walli, wall_embed)
 
         elif not 'deactivated' in groupi[0]:
-            subs = Server.find_by_args(ctx.guild.id).find_channel(webhook_channel.id).find_subs(groupi[0]['id'])
+            subs = chn.find_subs(groupi[0]['id'])
             if len(subs) == 0: raise notSub
 
             await self.setup_wall(ctx, 'del', messages, webhook_channel, 'g', groupi[0], group_compile_embed(groupi[0]))
 
         elif not 'deactivated' in useri[0]:
-            subs = Server.find_by_args(ctx.guild.id).find_channel(webhook_channel.id).find_subs(groupi[0]['id'])
+            subs = chn.find_subs(groupi[0]['id'])
             if len(subs) == 0: raise notSub
 
             await self.setup_wall(ctx, 'del', messages, webhook_channel, 'u', useri[0], user_compile_embed(useri[0]))
@@ -601,7 +610,7 @@ class Subscriptions(commands.Cog):
                     _sub.delete()
 
                     if len(_channel.subscriptions) == 0:
-                        _channel.delete()
+                        await _channel.delete()
 
                     await ctx.send(f'✅ Successfully unsubscrubed {channel.mention} from **{name}** wall!')
 

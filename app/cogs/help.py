@@ -1,9 +1,6 @@
 import discord
 from discord.ext import commands
 
-import traceback
-import sys
-
 from rsc.config import sets
 
 class Help(commands.Cog):
@@ -42,7 +39,7 @@ class Help(commands.Cog):
 
     @help.error
     async def help_error(self, ctx, error):
-        print(str(error))
-        traceback.print_exception(type(error), error, error.__traceback__, file=sys.stderr)
+        self.client.dispatch("command_error", ctx, error, force=True)
+
 def setup(client):
     client.add_cog(Help(client))

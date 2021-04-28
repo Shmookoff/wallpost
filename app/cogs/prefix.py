@@ -3,9 +3,6 @@ from discord.ext import commands
 
 import psycopg2
 
-import traceback
-import sys
-
 from rsc.config import psql_sets
 from rsc.functions import set_error_embed, add_command_and_example
 from rsc.exceptions import prefixGreaterThan3
@@ -41,12 +38,10 @@ class Prefix(commands.Cog):
             else:
                 error_embed = set_error_embed(f'Bot is missing permission(s).\n\n> {error}')
 
-        else:
-            print(str(error))
-            traceback.print_exception(type(error), error, error.__traceback__, file=sys.stderr)
-
         if error_embed != None and dm == False:
             await ctx.send(embed=error_embed)
+        else:
+            self.client.dispatch("command_error", ctx, error, force=True)
 
     @prefix.command(aliases=['set', 's'])
     @commands.bot_has_permissions(send_messages=True)
@@ -86,17 +81,11 @@ class Prefix(commands.Cog):
             if isinstance(error, prefixGreaterThan3):
                 error_embed = set_error_embed(f'The length of prefix must be `<` or `=` `3`',)
                 add_command_and_example(ctx, error_embed, f'`prefix set [Prefix]`', f'.p s !!!')
-
-            else:
-                print(str(error), str(error.original))
-                traceback.print_exception(type(error), error, error.__traceback__, file=sys.stderr)
-
-        else: 
-            print(str(error), str(error.original))
-            traceback.print_exception(type(error), error, error.__traceback__, file=sys.stderr)
         
         if error_embed != None and dm == False:
             await ctx.send(embed=error_embed)
+        else:
+            self.client.dispatch("command_error", ctx, error, force=True)
 
 def setup(client):
     client.add_cog(Prefix(client))

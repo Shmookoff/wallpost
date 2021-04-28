@@ -3,7 +3,6 @@ from discord.ext import ipc
 import requests
 import psycopg2
 import json
-from cryptography.fernet import Fernet
 from rsc.config import vk_sets, psql_sets, dc_sets
 
 app = Quart(__name__)

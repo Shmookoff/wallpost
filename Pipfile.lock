@@ -203,11 +203,11 @@
         },
         "discord-webhook": {
             "hashes": [
-                "sha256:548568b55ad32677f58b8d113be339ae83087b262f4e8438c96efe2bd0c48a19",
-                "sha256:eb68298de3c4fd98d476d3e2e7779959b65cb30da7c6e6d227fab1145c22c58f"
+                "sha256:d7774538321e62967b4248accfcad56972f05b9e07bd6599cd0d1c2ba376b325",
+                "sha256:f946aa5cc820e3cb95575f43ff0ac1e37d655a25cb214ca1a3b74a6af71d7e13"
             ],
             "index": "pypi",
-            "version": "==0.12.0"
+            "version": "==0.13.0"
         },
         "discord.py": {
             "hashes": [

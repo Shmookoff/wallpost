@@ -16,11 +16,6 @@ from aiovk.longpoll import BotsLongPoll
 
 from colorama import Fore, Style
 
-import traceback
-import sys
-
-from cryptography.fernet import Fernet
-
 from rsc.config import sets, psql_sets, vk_sets
 from rsc.exceptions import subExists, WallClosed
 
@@ -195,9 +190,7 @@ async def repost(sub, vk):
                         wall = await vkapi.wall.get(owner_id=sub.id, extended=1, offset=1, count=1, fields='photo_max', v='5.130')
             if len(wall['items']) > 0:
                 if sub.last_post_id != wall['items'][0]['id']:
-                    try: post_embed = compile_post_embed(wall, vk)
-                    except Exception as e:
-                        print_traceback(e)
+                    post_embed = compile_post_embed(wall, vk)
 
                     async with Webhook.Async(sub.channel.webhook_url) as webhook:
                         try: await webhook.send(embed=post_embed)
@@ -292,7 +285,7 @@ class Server:
         with psycopg2.connect(psql_sets["uri"]) as dbcon:
             with dbcon.cursor() as cur:
                 try:
-                    cur.execute("INSERT INTO server (id, key, key_uuid) VALUES(%s, %s, uuid_generate_v4())", (self.id, Fernet.generate_key()))
+                    cur.execute("INSERT INTO server (id) VALUES(%s)", (self.id))
                 except psycopg2.errors.UniqueViolation as e:
                     pass
         dbcon.close()
@@ -550,7 +543,3 @@ def add_command_and_example(ctx, error_embed, command, example):
         value = example,
         inline = False
     )
-
-def print_traceback(error):
-    print(str(error), str(error.original))
-    traceback.print_exception(type(error), error, error.__traceback__, file=sys.stderr)
