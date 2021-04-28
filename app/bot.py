@@ -20,7 +20,7 @@ class WallPost(commands.Bot):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
-        self.ipc = ipc.Server(self, secret_key = dc_sets['ipcSecretKey'], host='0.0.0.0')
+        self.ipc = ipc.Server(self, secret_key = dc_sets['ipcSecretKey'])
 
         self.remove_command('help')
 

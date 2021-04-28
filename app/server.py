@@ -6,7 +6,7 @@ import json
 from rsc.config import vk_sets, psql_sets, dc_sets
 
 app = Quart(__name__)
-ipc_client = ipc.Client(secret_key = dc_sets['ipcSecretKey'], host='0.0.0.0')
+ipc_client = ipc.Client(secret_key = dc_sets['ipcSecretKey'])
 
 @app.route('/')
 async def index():
