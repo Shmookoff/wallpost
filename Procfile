@@ -1,1 +1,1 @@
-web: hypercorn -b 0.0.0.0:${PORT} app.server:app & python -m app.bot & wait -n
+web:  python -m app.bot & hypercorn -b 0.0.0.0:${PORT} app.server:app & wait -n
