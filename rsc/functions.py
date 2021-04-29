@@ -16,7 +16,7 @@ from aiovk.longpoll import BotsLongPoll
 
 from colorama import Fore, Style
 
-from rsc.config import sets, psql_sets, vk_sets
+from rsc.config import sets, vk_sets
 from rsc.exceptions import subExists, WallClosed
 
 
@@ -196,7 +196,7 @@ async def repost(sub, vk):
                         try: await webhook.send(embed=post_embed)
                         except ClientResponseError as e:
                             if e.status == 404:
-                                with psycopg2.connect(psql_sets["uri"]) as dbcon:
+                                with psycopg2.connect(sets["psqlUri"]) as dbcon:
                                     with dbcon.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
                                         cur.execute("DELETE FROM channel WHERE id = %s", (sub.channel.id,))
                                 
@@ -216,7 +216,7 @@ async def repost(sub, vk):
                         except Exception as e:
                             print(e)
                         else:
-                            with psycopg2.connect(psql_sets["uri"]) as dbcon:
+                            with psycopg2.connect(sets["psqlUri"]) as dbcon:
                                 with dbcon.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
                                     cur.execute("UPDATE subscription SET last_post_id = %s WHERE channel_id = %s AND vk_id = @ %s AND vk_type = %s", (wall["items"][0]["id"], sub.channel.id, abs(sub.id), sub.type))
                             dbcon.close()
@@ -239,7 +239,7 @@ async def longpoll(sub, vk):
                     try: await webhook.send(embed=post_embed)
                     except ClientResponseError as e:
                         if e.status == 404:
-                            with psycopg2.connect(psql_sets["uri"]) as dbcon:
+                            with psycopg2.connect(sets["psqlUri"]) as dbcon:
                                 with dbcon.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
                                     cur.execute("DELETE FROM channel WHERE id = %s", (sub.channel.id,))
 
@@ -282,10 +282,10 @@ class Server:
     @classmethod
     def add(cls, id):
         self = cls(id, None)
-        with psycopg2.connect(psql_sets["uri"]) as dbcon:
+        with psycopg2.connect(sets["psqlUri"]) as dbcon:
             with dbcon.cursor() as cur:
                 try:
-                    cur.execute("INSERT INTO server (id) VALUES(%s)", (self.id))
+                    cur.execute("INSERT INTO server (id) VALUES(%s)", (self.id,))
                 except psycopg2.errors.UniqueViolation as e:
                     pass
         dbcon.close()
@@ -313,7 +313,7 @@ class Server:
             del channel
         print("")
 
-        with psycopg2.connect(psql_sets["uri"]) as dbcon:
+        with psycopg2.connect(sets["psqlUri"]) as dbcon:
             with dbcon.cursor() as cur:
                 cur.execute("DELETE FROM server WHERE id = %s", (self.id,))
         dbcon.close()
@@ -362,7 +362,7 @@ class Channel:
         webhook = await discord_channel.create_webhook(name="WallPost VK")
         self = cls(server, discord_channel.id, webhook.url)
 
-        with psycopg2.connect(psql_sets["uri"]) as dbcon:
+        with psycopg2.connect(sets["psqlUri"]) as dbcon:
             with dbcon.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
                 cur.execute("INSERT INTO channel (id, webhook_url, server_id) VALUES(%s, %s, %s)", (self.id, self.webhook_url, self.server.id))
         dbcon.close()
@@ -376,7 +376,7 @@ class Channel:
         print(f'\n{Fore.GREEN}SERVER {Fore.BLUE}{self.server.id}{Style.RESET_ALL}')
         print(f'    Del {Fore.GREEN}CHANNEL {Fore.BLUE}{self.id}{Style.RESET_ALL} with {Fore.GREEN}WEBHOOK {Fore.BLUE}{self.webhook_url[33:51]}{Style.RESET_ALL}')
 
-        with psycopg2.connect(psql_sets["uri"]) as dbcon:
+        with psycopg2.connect(sets["psqlUri"]) as dbcon:
             with dbcon.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
                 for sub in self.subscriptions:
                     print(f'        {Fore.GREEN}SUBSCRIPTION {Fore.BLUE}{sub.type}{abs(sub.id)} {Fore.GREEN}LONGPOLL {Fore.BLUE}{sub.longpoll}{Style.RESET_ALL}')
@@ -461,7 +461,7 @@ class Subscription:
     def add(cls, channel, info, vk, loop):
         self = cls(channel, info, vk, loop)
 
-        with psycopg2.connect(psql_sets["uri"]) as dbcon:
+        with psycopg2.connect(sets["psqlUri"]) as dbcon:
             with dbcon.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
                 cur.execute("INSERT INTO subscription (vk_id, vk_type, long_poll, last_post_id, channel_id) VALUES(%s, %s, %s, %s, %s)", (abs(self.id), self.type, self.longpoll, self.last_post_id, self.channel.id))
         dbcon.close()
@@ -477,7 +477,7 @@ class Subscription:
         print(f'    {Fore.GREEN}CHANNEL {Fore.BLUE}{self.channel.id}{Style.RESET_ALL} with {Fore.GREEN}WEBHOOK {Fore.BLUE}{self.channel.webhook_url[33:51]}{Style.RESET_ALL}')
         print(f'        Del {Fore.GREEN}SUBSCRIPTION {Fore.BLUE}{self.type}{abs(self.id)} {Fore.GREEN}LONGPOLL {Fore.BLUE}{self.longpoll}{Style.RESET_ALL}\n')
 
-        with psycopg2.connect(psql_sets["uri"]) as dbcon:
+        with psycopg2.connect(sets["psqlUri"]) as dbcon:
             with dbcon.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
                 cur.execute("DELETE FROM subscription WHERE channel_id = %s AND vk_id = %s AND vk_type = %s", (self.channel.id, abs(self.id), self.type))
         dbcon.close()
@@ -509,7 +509,7 @@ class Subscription:
 #Staff
 
 def get_prefix(client, message):
-    with psycopg2.connect(psql_sets["uri"]) as dbcon:
+    with psycopg2.connect(sets["psqlUri"]) as dbcon:
         with dbcon.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
             cur.execute(f"SELECT prefix FROM server WHERE id = {message.guild.id}")
             prefix = cur.fetchone()['prefix']

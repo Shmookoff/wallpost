@@ -1,2 +1,1 @@
-bot: python -m app.bot
-web: gunicorn --worker-class quart.worker.GunicornWorker app.server:app 
+web: hypercorn -b 0.0.0.0:${PORT} app.server:app & py -m app.bot & wait -n

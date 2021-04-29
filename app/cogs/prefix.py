@@ -3,7 +3,7 @@ from discord.ext import commands
 
 import psycopg2
 
-from rsc.config import psql_sets
+from rsc.config import sets
 from rsc.functions import set_error_embed, add_command_and_example
 from rsc.exceptions import prefixGreaterThan3
 
@@ -15,7 +15,7 @@ class Prefix(commands.Cog):
     @commands.group(aliases=['p'], invoke_without_command=True)
     @commands.bot_has_permissions(send_messages=True)
     async def prefix(self, ctx):
-        with psycopg2.connect(host=psql_sets["host"], dbname=psql_sets["name"], user=psql_sets["user"], password=psql_sets["password"]) as dbcon:
+        with psycopg2.connect(sets["psqlUri"]) as dbcon:
             with dbcon.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
                 cur.execute(f"SELECT prefix FROM server WHERE id = {ctx.guild.id}")
                 prefix = cur.fetchone()['prefix']
@@ -48,7 +48,7 @@ class Prefix(commands.Cog):
     @commands.has_permissions(administrator=True)
     async def prefix_set(self, ctx, prefix: str=None):
         if prefix == None or len(prefix) <= 3:
-            with psycopg2.connect(host=psql_sets["host"], dbname=psql_sets["name"], user=psql_sets["user"], password=psql_sets["password"]) as dbcon:
+            with psycopg2.connect(sets["psqlUri"]) as dbcon:
                 with dbcon.cursor() as cur:
                     if prefix in [None, '.']:
                         cur.execute(f"UPDATE server SET prefix = NULL WHERE id = {ctx.guild.id};")

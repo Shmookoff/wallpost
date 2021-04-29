@@ -12,7 +12,7 @@ import sys
 
 from colorama import Fore, Style
 
-from rsc.config import dc_sets, psql_sets
+from rsc.config import sets
 from rsc.functions import get_prefix, Server
 
 
@@ -20,12 +20,12 @@ class WallPost(commands.Bot):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
-        self.ipc = ipc.Server(self, secret_key = dc_sets['ipcSecretKey'])
+        self.ipc = ipc.Server(self, secret_key = sets['ipcSecretKey'])
 
         self.remove_command('help')
 
     async def on_ready(self):
-        with psycopg2.connect(psql_sets["uri"]) as dbcon:
+        with psycopg2.connect(sets["psqlUri"]) as dbcon:
             with dbcon.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
                 cur.execute("SELECT id FROM server")
                 guilds_in_db = cur.fetchall()
@@ -184,4 +184,4 @@ async def unload(ctx, cog=None):
 
 
 client.ipc.start()
-client.run(dc_sets["token"])
+client.run(sets["dcToken"])

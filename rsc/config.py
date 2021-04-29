@@ -1,5 +1,9 @@
 import os
-from urllib.parse import urlparse
+
+if "HEROKU" in os.environ:
+    url = "https://wallpostvk.herokuapp.com/"
+else:
+    url = "http://localhost:5000/"
 
 sets = {
     "embedTitle": "Open post",
@@ -7,20 +11,16 @@ sets = {
 
     "errorTitle": "ERROR",
     "errorColor": 16711680,
-}
 
-dc_sets = {
-    "token": os.environ.get("TOKEN"),
-    "ipcSecretKey": os.environ.get("IPC_SECRET_KEY")
+    "url": url,
+    "ipcSecretKey": os.environ.get("IPC_SECRET_KEY"),
+    "psqlUri": os.environ.get("DATABASE_URL"),
+    "dcToken": os.environ.get("TOKEN"),
 }
 
 vk_sets = {
     "appId": 7797033,
-    "redirectUri": "https://wallpostvk.herokuapp.com/oauth2/redirect",
+    "redirectUri": f"{url}oauth2/redirect",
     "secureKey": os.environ.get("VK_SECURE_KEY"),
     "serviceKey": os.environ.get("VK_SERVICE_KEY"),
-}
-
-psql_sets = {
-    "uri": os.environ.get("DATABASE_URL")
 }

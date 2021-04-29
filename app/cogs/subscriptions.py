@@ -6,9 +6,10 @@ import texttable
 from cryptography.fernet import Fernet
 from aiovk.exceptions import VkAPIError
 
-from rsc.config import sets, psql_sets
+from rsc.config import sets
 from rsc.functions import *
 from rsc.exceptions import *
+
 
 class Subscriptions(commands.Cog):
     def __init__(self, client):
@@ -19,7 +20,7 @@ class Subscriptions(commands.Cog):
     async def ainit(self):
         self.vk = await get_vk_info()
 
-        with psycopg2.connect(psql_sets["uri"]) as dbcon:
+        with psycopg2.connect(sets["psqlUri"]) as dbcon:
             with dbcon.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
                 cur.execute("SELECT id, token FROM server")
                 for server in cur.fetchall():
@@ -58,47 +59,9 @@ class Subscriptions(commands.Cog):
                                 Subscription.init(_channel, subscription, self.vk, self.loop)
             
                     print("")
-
-            # with dbcon.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
-            #     cur.execute("""
-            #     SELECT server.id, token, 
-            #         json_agg(json_build_object(
-            #                                 'channel_id', channel_id,
-            #                                 'webhook_url', webhook_url,
-            #                                 'subscriptions', s.subscriptions
-            #                                 )) as channels
-            #     FROM (
-            #         SELECT sb.channel_id, 
-            #             json_agg(json_build_object(
-            #                                     'vk_id', sb.vk_id,
-            #                                     'vk_type', sb.vk_type,
-            #                                     'long_poll', sb.long_poll,
-            #                                     'last_post_id', sb.last_post_id,
-            #                                     'token', sb.token
-            #                                     )) as subscriptions
-            #         FROM subscription sb
-            #         GROUP by sb.channel_id
-            #     ) s 
-            #     LEFT JOIN channel ON channel.id = channel_id 
-            #     LEFT JOIN server ON server.id = server_id
-            #     GROUP BY server.id, token;
-            #     """)
-            #     servers = cur.fetchall()
-
-            # for server in servers:
-            #     Server.init(server['id'], server['token'])
-
-            # for server in servers: 
-            #     _server = Server.init(server['id'], server['token'])
-
-            #     for channel in server['channels']:
-            #         _channel = Channel.init(_server, channel['channel_id'], channel['webhook_url'])
-
-            #         for subscription in channel['subscriptions']:
-            #             Subscription.init(_channel, subscription, self.vk, self.loop)
-                    
-            #         print("")
         dbcon.close
+
+        self.loop.create_task(self.redis_worker())
 
 
     @commands.group(aliases=['subscriptions', 's'], invoke_without_command=True)
@@ -141,7 +104,7 @@ class Subscriptions(commands.Cog):
         Server.temp_data.append({"key": key, "server_id": ctx.guild.id, "channel_id": ctx.channel.id})
         embed = discord.Embed(
             title = 'Authentication',
-            url = f'http://wallpostvk.herokuapp.com/oauth2/login?key={key}',
+            url = f'{sets["url"]}oauth2/login?key={key}',
             description = 'Authenticate with your VK profile to be able to use **WallPost VK**.',
             color = sets["embedColor"]
         )
@@ -150,26 +113,6 @@ class Subscriptions(commands.Cog):
 
         await ctx.send('Check your DM for an authentication link!')
         await ctx.author.send(embed=embed)
-
-
-        # with psycopg2.connect(psql_sets["uri"]) as dbcon:
-        #     with dbcon.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
-        #         cur.execute(f"SELECT key, key_uuid FROM server WHERE id = {ctx.guild.id}")
-        #         res = cur.fetchone()
-        #         key, key_uuid = res['key'], res['key_uuid']
-        # dbcon.close
-
-        # embed = discord.Embed(
-        #     title = 'Authentication',
-        #     url = f'https://posthound.herokuapp.com/oauth2/login?server_id={Fernet(key).encrypt(str(ctx.guild.id).encode()).decode()}&key_uuid={key_uuid}',
-        #     description = 'Authenticate with your VK profile to be able to interact with VK walls.\n\n**Please, do not pass any arguments from link or link itself to 3rd parties. __It may result in security flaws.__**',
-        #     color = sets["embedColor"]
-        # )
-        # embed.set_thumbnail(url=self.vk['photo'])
-        # embed.set_footer(text=self.vk['name'], icon_url=self.vk['photo'])
-
-        # await ctx.send('Check your DM for an authentication link!')
-        # await ctx.author.send(embed=embed)
 
     @sub_set.error
     async def sub_set_error(self, ctx, error):
@@ -535,30 +478,6 @@ class Subscriptions(commands.Cog):
             self.client.dispatch("command_error", ctx, error, force=True)
 
 
-    @ipc.server.route()
-    async def authentication(self, data):
-        try:
-            temp_data = list(filter(lambda temp_data: temp_data['key'] == data.key, Server.temp_data))[0]
-        except IndexError:
-            return "This link has been expired. Get a new one with `sub set` command."
-
-        server = Server.find_by_args(temp_data['server_id'])
-        server.token = data.token
-
-        async with TokenSession(server.token) as ses:
-            vkapi = VKAPI(ses)
-            await (self.client.get_channel(temp_data['channel_id']).send(f"**{self.client.get_guild(server.id).name}** is now bound to this account.\nYou can change it with `sub set` command.", embed = user_compile_embed((await vkapi.users.get(fields='photo_max,status,screen_name,followers_count,counters', v='5.130'))[0])))
-        
-        with psycopg2.connect(psql_sets["uri"]) as dbcon:
-            with dbcon.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
-                cur.execute("UPDATE server SET token = %s WHERE id = %s", (server.token, server.id))
-        dbcon.close
-
-        Server.temp_data.remove(temp_data)
-
-        return 'Your account is now bound to the server. You can now close this tab.'
-
-
     async def setup_wall(self, ctx, action, messages, channel, wall, walli, embed):
         messages.append(await ctx.send(f'Is this the wall you requested?\nReact with ✅ or ❌', embed=embed))
 
@@ -618,6 +537,31 @@ class Subscriptions(commands.Cog):
                 await ctx.channel.delete_messages(messages)
                 messages.clear()
                 await ctx.send('❌ Cancelled')
+
+
+    @ipc.server.route()
+    async def authentication(self, data):
+        try:
+            temp_data = list(filter(lambda temp_data: temp_data['key'] == data.key, Server.temp_data))[0]
+        except IndexError:
+            return "This link has been expired. Get a new one with `sub set` command."
+
+        server = Server.find_by_args(temp_data['server_id'])
+        server.token = data.token
+
+        async with TokenSession(server.token) as ses:
+            vkapi = VKAPI(ses)
+            await (self.client.get_channel(temp_data['channel_id']).send(f"**{self.client.get_guild(server.id).name}** is now bound to this account.\nYou can change it with `sub set` command.", embed = user_compile_embed((await vkapi.users.get(fields='photo_max,status,screen_name,followers_count,counters', v='5.130'))[0])))
+        
+        with psycopg2.connect(sets["psqlUri"]) as dbcon:
+            with dbcon.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
+                cur.execute("UPDATE server SET token = %s WHERE id = %s", (server.token, server.id))
+        dbcon.close
+
+        Server.temp_data.remove(temp_data)
+
+        return 'Your account is now bound to the server. You can now close this tab.'
+
 
 def setup(client):
     client.add_cog(Subscriptions(client))
