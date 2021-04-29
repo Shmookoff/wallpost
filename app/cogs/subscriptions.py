@@ -150,12 +150,16 @@ class Subscriptions(commands.Cog):
         async with TokenSession(vk_token) as ses:
             vkapi = VKAPI(ses)
 
-            try: groupi = await vkapi.groups.getById(group_id=vk_id, fields="status,description,members_count", v='5.130')
+            try:
+                groupi = await vkapi.groups.getById(group_id=vk_id, fields="status,description,members_count", v='5.130')
+                if groupi[0]['is_closed'] == 1 and not 'is_member' in groupi[0]:
+                    groupi = [{'deactivated': True}]
             except VkAPIError as error:
                 if error.error_code == 100:
                     groupi = [{'deactivated': True}]
             
-            try: useri = await vkapi.users.get(user_ids=vk_id, fields='photo_max,status,screen_name,followers_count,counters', v='5.130')
+            try:
+                useri = await vkapi.users.get(user_ids=vk_id, fields='photo_max,status,screen_name,followers_count,counters', v='5.130')
             except VkAPIError as error:
                 if error.error_code == 113:
                     useri = [{'deactivated': True}]
