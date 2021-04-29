@@ -61,8 +61,6 @@ class Subscriptions(commands.Cog):
                     print("")
         dbcon.close
 
-        self.loop.create_task(self.redis_worker())
-
 
     @commands.group(aliases=['subscriptions', 's'], invoke_without_command=True)
     @commands.has_permissions(administrator=True)
