@@ -6,6 +6,7 @@ import sys
 
 from aiovk.exceptions import VkAuthError
 
+from rsc.config import sets
 from rsc.functions import set_error_embed, add_command_and_example
 from rsc.exceptions import *
 
@@ -14,7 +15,7 @@ import time
 class ExceptionHandler(commands.Cog):
     def __init__(self, client):
         self.client = client
-        self.log_chn = client.get_channel(836705410630287451)
+        self.log_chn = client.get_channel(sets["logChnId"])
         print(f'    Set LOG_CHN {self.log_chn.name} at {self.log_chn.guild.name}\n')
 
     @commands.Cog.listener()

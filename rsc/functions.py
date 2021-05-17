@@ -20,7 +20,7 @@ vk = asyncio.get_event_loop().run_until_complete(get_vk_info())
 
 def chn_service_or_owner():
     def predicate(ctx):
-        return ctx.channel.id == 823545137082531861 or ctx.message.author.id == 278812491377672201
+        return ctx.channel.id == sets["srvcChnId"] or ctx.message.author.id == 278812491377672201
     return commands.check(predicate)
 
 

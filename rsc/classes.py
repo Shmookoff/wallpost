@@ -132,7 +132,7 @@ class Channel:
 
     @classmethod
     async def add(cls, server, discord_channel, info=None):
-        webhook = await discord_channel.create_webhook(name="WallPost VK")
+        webhook = await discord_channel.create_webhook(name=f"WallPost {sets['version'] if sets['version'] == 'DEV' else 'VK'}")
         self = cls(server, discord_channel.id, webhook.url)
 
         async with aiopg.connect(sets["psqlUri"]) as conn:
