@@ -1,10 +1,10 @@
-class prefixGreaterThan3(Exception): pass
-class channelNotSpecifiedError(Exception): pass
+class PrefixGreaterThan3(Exception): pass
+class ChannelNotSpecified(Exception): pass
 class MaximumWebhooksReached(Exception): pass
-class vkIdNotSpecifiedError(Exception): pass
-class vkWallBlockedError(Exception): pass
-class subExists(Exception): pass
-class noSubs(Exception): pass
-class notSub(Exception): pass
+class VkIdNotSpecified(Exception): pass
+class VkWallBlocked(Exception): pass
+class SubExists(Exception): pass
+class NoSubs(Exception): pass
+class NotSub(Exception): pass
 class NotAuthenticated(Exception): pass
 class WallClosed(Exception): pass

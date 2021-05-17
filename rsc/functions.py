@@ -1,23 +1,27 @@
 import discord
 from discord.ext import commands
 
-from dhooks import Webhook, Embed
-
-import psycopg2
 import asyncio
-import aiohttp
-from aiohttp.client_exceptions import ClientResponseError
+import aiovk
+
 from datetime import datetime
 
-from aiovk.sessions import TokenSession
-from aiovk.api import API as VKAPI
-from aiovk.pools import AsyncVkExecuteRequestPool #!!!
-from aiovk.longpoll import BotsLongPoll
-
-from colorama import Fore, Style
-
 from rsc.config import sets, vk_sets
-from rsc.exceptions import subExists, WallClosed
+
+
+#Staff
+
+async def get_vk_info():
+    async with aiovk.TokenSession(vk_sets["serviceKey"]) as ses:
+        vkapi = aiovk.API(ses)
+        vk_info = await vkapi.groups.getById(group_id=22822305, v='5.130')
+    return {'name': vk_info[0]['name'], 'photo': vk_info[0]['photo_200']}
+vk = asyncio.get_event_loop().run_until_complete(get_vk_info())
+
+def chn_service_or_owner():
+    def predicate(ctx):
+        return ctx.channel.id == 823545137082531861 or ctx.message.author.id == 278812491377672201
+    return commands.check(predicate)
 
 
 #Subscription
@@ -89,18 +93,14 @@ def user_compile_embed(user):
             inline = False
         )
     return user_embed
-
-
-#Repost
-
-def compile_post_embed(post, vk, wall1=None):
+def compile_post_embed(post, wall1=None):
     if wall1 is None:
         items = post['items'][0]
-        embed = Embed(
+        embed = discord.Embed(
             title = sets["embedTitle"],
             url = f'https://vk.com/wall{items["from_id"]}_{items["id"]}',
             description = items['text'],
-            timestamp = datetime.utcfromtimestamp(items['date']).isoformat(),
+            timestamp = datetime.utcfromtimestamp(items['date']),
             color = sets["embedColor"]
         )
         if items['owner_id'] > 0:
@@ -119,11 +119,11 @@ def compile_post_embed(post, vk, wall1=None):
             )
     else:
         items = post
-        embed = Embed(
+        embed = discord.Embed(
             title = sets["embedTitle"],
             url = f'https://vk.com/wall{items["from_id"]}_{items["id"]}',
             description = items['text'],
-            timestamp = datetime.utcfromtimestamp(items['date']).isoformat(),
+            timestamp = datetime.utcfromtimestamp(items['date']),
             color = sets["embedColor"]
         )
         embed.set_author(
@@ -133,16 +133,16 @@ def compile_post_embed(post, vk, wall1=None):
         )
     
     has_photo = False
-    if 'attachments' in items:                              
-        for attachment in items['attachments']:             
-            if 'photo' in attachment:                       
-                has_photo = True                     
-                hw = 0                                      
-                image_url = ''                              
-                for size in attachment['photo']['sizes']:   
-                    if size['width']*size['height'] > hw:   
-                        hw = size['width']*size['height']   
-                        image_url = size['url']             
+    if 'attachments' in items:
+        for attachment in items['attachments']:
+            if attachment['type'] == 'photo':
+                has_photo = True
+                hw = 0
+                image_url = ''
+                for size in attachment['photo']['sizes']:
+                    if size['width']*size['height'] > hw:
+                        hw = size['width']*size['height']
+                        image_url = size['url']
                 embed.set_image(url = image_url)
                 break
 
@@ -161,15 +161,15 @@ def compile_post_embed(post, vk, wall1=None):
             )
         
         if not has_photo:
-            if 'attachments' in copy:                              
-                for attachment in copy['attachments']:             
-                    if 'photo' in attachment:                                        
-                        hw = 0                                      
-                        image_url = ''                              
-                        for size in attachment['photo']['sizes']:   
-                            if size['width']*size['height'] > hw:   
-                                hw = size['width']*size['height']   
-                                image_url = size['url']             
+            if 'attachments' in copy:
+                for attachment in copy['attachments']:
+                    if attachment['type'] == 'photo':
+                        hw = 0
+                        image_url = ''
+                        for size in attachment['photo']['sizes']:
+                            if size['width']*size['height'] > hw:
+                                hw = size['width']*size['height']
+                                image_url = size['url']
                         embed.set_image(url = image_url)
                         break
 
@@ -177,362 +177,34 @@ def compile_post_embed(post, vk, wall1=None):
 
     return embed
 
-async def repost(sub, vk):
-    while True:
-        async with TokenSession(sub.server.token) as ses:
-            vkapi = VKAPI(ses)
-            wall = await vkapi.wall.get(owner_id=sub.id, extended=1, count=1, fields='photo_max', v='5.130')
-        if len(wall['items']) > 0:
-            if 'is_pinned' in wall['items'][0]:
-                if wall['items'][0]['is_pinned'] == 1:
-                    async with TokenSession(sub.server.token) as ses:
-                        vkapi = VKAPI(ses)
-                        wall = await vkapi.wall.get(owner_id=sub.id, extended=1, offset=1, count=1, fields='photo_max', v='5.130')
-            if len(wall['items']) > 0:
-                if sub.last_post_id != wall['items'][0]['id']:
-                    post_embed = compile_post_embed(wall, vk)
-
-                    async with Webhook.Async(sub.channel.webhook_url) as webhook:
-                        try: await webhook.send(embed=post_embed)
-                        except ClientResponseError as e:
-                            if e.status == 404:
-                                with psycopg2.connect(sets["psqlUri"]) as dbcon:
-                                    with dbcon.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
-                                        cur.execute("DELETE FROM channel WHERE id = %s", (sub.channel.id,))
-                                
-                                for subscription in sub.channel.subscriptions:
-                                    if not subscription is sub:
-                                        subscription.task.cancel()
-                                        del subscription
-                                    else: _task = subscription.task
-
-                                print(f'Deleted {Fore.GREEN}CHANNEL {Fore.BLUE}{sub.channel.id} {Style.RESET_ALL}with {Fore.GREEN}WEBHOOK {Fore.BLUE}{sub.channel.webhook_url[33:51]}    {Fore.GREEN}SERVER {Fore.BLUE}{sub.server.id}{Style.RESET_ALL}')
-
-                                del sub.channel, sub
-
-                                _task.cancel()
-                            else: 
-                                print(e)
-                        except Exception as e:
-                            print(e)
-                        else:
-                            with psycopg2.connect(sets["psqlUri"]) as dbcon:
-                                with dbcon.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
-                                    cur.execute("UPDATE subscription SET last_post_id = %s WHERE channel_id = %s AND vk_id = @ %s AND vk_type = %s", (wall["items"][0]["id"], sub.channel.id, abs(sub.id), sub.type))
-                            dbcon.close()
-                            sub.last_post_id = wall['items'][0]['id']
-
-                            print(f'Reposted {Fore.GREEN}POST {Fore.BLUE}{wall["items"][0]["id"]}    {Fore.GREEN}SERVER {Fore.BLUE}{sub.server.id} {Fore.GREEN}CHANNEL {Fore.BLUE}{sub.channel.id} {Fore.GREEN}WEBHOOK {Fore.BLUE}{sub.channel.webhook_url[33:51]}    {Fore.GREEN}WALL {Fore.BLUE}{sub.type}{abs(sub.id)} {Fore.GREEN}LONGPOLL {Fore.BLUE}{sub.longpoll}{Style.RESET_ALL}')
-        await asyncio.sleep(60)
-
-async def longpoll(sub, vk):
-    async with TokenSession(sub.token) as ses:
-        long_poll = BotsLongPoll(ses, group_id=sub.id)
-        async for event in long_poll.iter():
-            if event['type'] == 'wall_post_new':
-                async with TokenSession(sub.token) as ses:
-                    vkapi = VKAPI(ses)
-                    post_embed = compile_post_embed(event['object'], vk, await vkapi.groups.getById(group_id=sub.id, fields='photo_max'))
-
-                
-                async with Webhook.Async(sub.channel.webhook_url) as webhook:
-                    try: await webhook.send(embed=post_embed)
-                    except ClientResponseError as e:
-                        if e.status == 404:
-                            with psycopg2.connect(sets["psqlUri"]) as dbcon:
-                                with dbcon.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
-                                    cur.execute("DELETE FROM channel WHERE id = %s", (sub.channel.id,))
-
-                            for subscription in sub.channel.subscriptions:
-                                if not subscription is sub:
-                                    subscription.task.cancel()
-                                    del subscription
-                                else: _task = subscription.task
-
-                            print(f'Deleted {Fore.GREEN}CHANNEL {Fore.BLUE}{sub.channel.id} {Style.RESET_ALL}with {Fore.GREEN}WEBHOOK {Fore.BLUE}{sub.channel.webhook_url[33:51]}    {Fore.GREEN}SERVER {Fore.BLUE}{sub.server.id}{Style.RESET_ALL}')
-
-                            del sub.channel, sub
-
-                            _task.cancel()
-                        else: 
-                            print(e)
-                    except Exception as e:
-                        print(e)
-                    else:
-                        print(f'Reposted {Fore.GREEN}POST {Fore.BLUE}{event["object"]["id"]}    {Fore.GREEN}SERVER {Fore.BLUE}{sub.server.id} {Fore.GREEN}CHANNEL {Fore.BLUE}{sub.channel.id} {Fore.GREEN}WEBHOOK {Fore.BLUE}{sub.channel.webhook_url[33:51]}    {Fore.GREEN}WALL {Fore.BLUE}{sub.type}{sub.id} {Fore.GREEN}LONGPOLL {Fore.BLUE}{sub.longpoll}{Style.RESET_ALL}')
-
-class Server: 
-    all = []
-    temp_data = []
-
-    def __init__(self, id, token):
-        self.id = id
-        self.token = token
-
-        self.channels = []
-
-        Server.all.append(self)
-
-    @classmethod
-    def init(cls, id, token):
-        self = cls(id, token)
-        print(f'Init {Fore.GREEN}SERVER {Fore.BLUE}{self.id}{Style.RESET_ALL}')
-        return self
-
-    @classmethod
-    def add(cls, id):
-        self = cls(id, None)
-        with psycopg2.connect(sets["psqlUri"]) as dbcon:
-            with dbcon.cursor() as cur:
-                try:
-                    cur.execute("INSERT INTO server (id) VALUES(%s)", (self.id,))
-                except psycopg2.errors.UniqueViolation as e:
-                    pass
-        dbcon.close()
-        print(f'\nAdd {Fore.GREEN}SERVER {Fore.BLUE}{self.id}{Style.RESET_ALL}\n')
-        return self
-
-    def delete(self):
-        print(f'\nDel {Fore.GREEN}SERVER {Fore.BLUE}{self.id}{Style.RESET_ALL}')
-
-        for channel in self.channels:
-            print(f'    {Fore.GREEN}CHANNEL {Fore.BLUE}{channel.id}{Style.RESET_ALL} with {Fore.GREEN}WEBHOOK {Fore.BLUE}{channel.webhook_url[33:51]}{Style.RESET_ALL}')
-
-            for sub in channel.subscriptions:
-                print(f'        {Fore.GREEN}SUBSCRIPTION {Fore.BLUE}{sub.type}{abs(sub.id)} {Fore.GREEN}LONGPOLL {Fore.BLUE}{sub.longpoll}{Style.RESET_ALL}')
-
-                Subscription.all.remove(sub)
-                channel.subscriptions.remove(sub)
-                sub.task.cancel()
-
-                del sub
-
-            Channel.all.remove(channel)
-            self.channels.remove(channel)
-
-            del channel
-        print("")
-
-        with psycopg2.connect(sets["psqlUri"]) as dbcon:
-            with dbcon.cursor() as cur:
-                cur.execute("DELETE FROM server WHERE id = %s", (self.id,))
-        dbcon.close()
-
-        Server.all.remove(self)
-        del self
-
-    def find_channel(self, id):
-        for channel in self.channels:
-            if channel.eq_by_args(id):
-                return channel
-        return None
-
-    def eq_by_args(self, other_id):
-        return self.id == other_id
-    
-    @classmethod
-    def find_by_args(cls, id):
-        for server in cls.all:
-            if server.eq_by_args(id):
-                return server
-        return None
-
-class Channel:
-    all = []
-
-    def __init__(self, server, id, webhook_url):
-        self.server = server
-
-        self.id = id
-        self.webhook_url = webhook_url
-
-        self.subscriptions = []
-        server.channels.append(self)
-
-        Channel.all.append(self)
-
-    @classmethod
-    def init(cls, server, id, webhook_url):
-        self = cls(server, id, webhook_url)
-        print(f'    Init {Fore.GREEN}CHANNEL {Fore.BLUE}{self.id}{Style.RESET_ALL} with {Fore.GREEN}WEBHOOK {Fore.BLUE}{self.webhook_url[33:51]}{Style.RESET_ALL}')
-        return self
-
-    @classmethod
-    async def add(cls, server, discord_channel):
-        webhook = await discord_channel.create_webhook(name="WallPost VK")
-        self = cls(server, discord_channel.id, webhook.url)
-
-        with psycopg2.connect(sets["psqlUri"]) as dbcon:
-            with dbcon.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
-                cur.execute("INSERT INTO channel (id, webhook_url, server_id) VALUES(%s, %s, %s)", (self.id, self.webhook_url, self.server.id))
-        dbcon.close()
-
-        print(f'\n{Fore.GREEN}SERVER {Fore.BLUE}{self.server.id}{Style.RESET_ALL}')
-        print(f'    Add {Fore.GREEN}CHANNEL {Fore.BLUE}{self.id}{Style.RESET_ALL} with {Fore.GREEN}WEBHOOK {Fore.BLUE}{self.webhook_url[33:51]}{Style.RESET_ALL}\n')
-        
-        return self
-
-    async def delete(self):
-        print(f'\n{Fore.GREEN}SERVER {Fore.BLUE}{self.server.id}{Style.RESET_ALL}')
-        print(f'    Del {Fore.GREEN}CHANNEL {Fore.BLUE}{self.id}{Style.RESET_ALL} with {Fore.GREEN}WEBHOOK {Fore.BLUE}{self.webhook_url[33:51]}{Style.RESET_ALL}')
-
-        with psycopg2.connect(sets["psqlUri"]) as dbcon:
-            with dbcon.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
-                for sub in self.subscriptions:
-                    print(f'        {Fore.GREEN}SUBSCRIPTION {Fore.BLUE}{sub.type}{abs(sub.id)} {Fore.GREEN}LONGPOLL {Fore.BLUE}{sub.longpoll}{Style.RESET_ALL}')
-                    
-                    cur.execute("DELETE FROM subscription WHERE channel_id = %s AND vk_id = %s AND vk_type = %s", (sub.channel.id, abs(sub.id), sub.type))
-
-                    Subscription.all.remove(sub)
-                    self.subscriptions.remove(sub)
-                    sub.task.cancel()
-
-                    del sub
-
-                async with aiohttp.ClientSession() as session:
-                    await discord.Webhook.from_url(url=self.webhook_url, adapter=discord.AsyncWebhookAdapter(session)).delete()
-
-                cur.execute("DELETE FROM channel WHERE id = %s", (self.id,))
-        dbcon.close()
-
-        Channel.all.remove(self)
-        self.server.channels.remove(self)
-        print("")
-
-        del self
-
-    def find_subs(self, id, wall = None):
-        if wall is None:
-            subs = []
-            i = 0
-            for sub in self.subscriptions:
-                if abs(sub.id) == abs(id):
-                    subs.append(sub)
-                    i += 1
-                if i == 2:
-                    break
-            return subs
-        else:
-            for sub in self.subscriptions:
-                if (abs(sub.id), sub.type) == (abs(id), wall):
-                    return sub
-        return None
-
-    def eq_by_args(self, other_id):
-        return self.id == other_id
-
-    # @classmethod
-    # def find_by_args(cls, id):
-    #     for channel in cls.all:
-    #         if channel.eq_by_args(id):
-    #             return channel
-    #     return None
-
-class Subscription:
-    all = []
-
-    def __init__(self, channel, info, vk, loop):
-        self.server = channel.server
-        self.channel = channel
-
-        self.id = info['vk_id']
-        self.type = info['vk_type']
-        self.longpoll = info['long_poll']
-        self.last_post_id = info['last_post_id']
-        self.token = info['token']
-
-        if info['long_poll'] == False: 
-            if self.type == 'g': self.id = -self.id
-            self.task = loop.create_task(repost(self, vk))
-        else:
-            self.task = loop.create_task(longpoll(self, vk))
-
-        channel.subscriptions.append(self)
-
-        Subscription.all.append(self)
-
-    @classmethod
-    def init(cls, channel, info, vk, loop):
-        self = cls(channel, info, vk, loop)
-        print(f'        Init {Fore.GREEN}SUBSCRIPTION {Fore.BLUE}{self.type}{abs(self.id)} {Fore.GREEN}LONGPOLL {Fore.BLUE}{self.longpoll}{Style.RESET_ALL}')
-        return self
-
-    @classmethod
-    def add(cls, channel, info, vk, loop):
-        self = cls(channel, info, vk, loop)
-
-        with psycopg2.connect(sets["psqlUri"]) as dbcon:
-            with dbcon.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
-                cur.execute("INSERT INTO subscription (vk_id, vk_type, long_poll, last_post_id, channel_id) VALUES(%s, %s, %s, %s, %s)", (abs(self.id), self.type, self.longpoll, self.last_post_id, self.channel.id))
-        dbcon.close()
-
-        print(f'\n{Fore.GREEN}SERVER {Fore.BLUE}{self.server.id}{Style.RESET_ALL}')
-        print(f'    {Fore.GREEN}CHANNEL {Fore.BLUE}{self.channel.id}{Style.RESET_ALL} with {Fore.GREEN}WEBHOOK {Fore.BLUE}{self.channel.webhook_url[33:51]}{Style.RESET_ALL}')
-        print(f'        Add {Fore.GREEN}SUBSCRIPTION {Fore.BLUE}{self.type}{abs(self.id)} {Fore.GREEN}LONGPOLL {Fore.BLUE}{self.longpoll}{Style.RESET_ALL}\n')
-
-        return self
-
-    def delete(self):
-        print(f'\n{Fore.GREEN}SERVER {Fore.BLUE}{self.server.id}{Style.RESET_ALL}')
-        print(f'    {Fore.GREEN}CHANNEL {Fore.BLUE}{self.channel.id}{Style.RESET_ALL} with {Fore.GREEN}WEBHOOK {Fore.BLUE}{self.channel.webhook_url[33:51]}{Style.RESET_ALL}')
-        print(f'        Del {Fore.GREEN}SUBSCRIPTION {Fore.BLUE}{self.type}{abs(self.id)} {Fore.GREEN}LONGPOLL {Fore.BLUE}{self.longpoll}{Style.RESET_ALL}\n')
-
-        with psycopg2.connect(sets["psqlUri"]) as dbcon:
-            with dbcon.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
-                cur.execute("DELETE FROM subscription WHERE channel_id = %s AND vk_id = %s AND vk_type = %s", (self.channel.id, abs(self.id), self.type))
-        dbcon.close()
-
-        Subscription.all.remove(self)
-        self.channel.subscriptions.remove(self)
-        self.task.cancel()
-
-        del self
-
-    # def eq_by_args(self, other_channel, other_id, other_wall):
-    #     return self.channel.eq_by_args(other_channel.id) and (abs(self.id), self.type) == (abs(other_id), other_wall)
-
-    # @classmethod
-    # def find_by_args(cls, channel: Channel, id: int, wall: str = None):
-    #     if wall is None:
-    #         subs = []
-
-    #         for subscription in cls.all:
-    #             if subscription.eq_by_args(channel, id, type):
-    #                 return subscription
-    #     else:
-    #         for subscription in cls.all:
-    #             if subscription.eq_by_args(channel, id, type):
-    #                 return subscription
-    #         return None
-
-
-#Staff
-
-def get_prefix(client, message):
-    with psycopg2.connect(sets["psqlUri"]) as dbcon:
-        with dbcon.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
-            cur.execute(f"SELECT prefix FROM server WHERE id = {message.guild.id}")
-            prefix = cur.fetchone()['prefix']
-        dbcon.close
-
-    if prefix == None: 
-        return '.'
-    else: 
-        return prefix
-
-async def get_vk_info():
-    async with TokenSession(vk_sets["serviceKey"]) as ses:
-        vkapi = VKAPI(ses)
-        vk_info = await vkapi.groups.getById(group_id=22822305, v='5.130')
-    return {'name': vk_info[0]['name'], 'photo': vk_info[0]['photo_200']}
-
 
 #Errors
 
 def set_error_embed(d):
     return discord.Embed(title=sets["errorTitle"], color=sets["errorColor"], description=d)
 
-def add_command_and_example(ctx, error_embed, command, example):
+def add_command_and_example(ctx, error_embed):
+    cmd_name = ctx.command.name
+
+
+    if cmd_name == 'help':
+        command, example = '`help (Command)`', '.h sub\n.help'
+
+    elif cmd_name == 'prefix':
+        command, example = '`prefix (Prefix to set)`', '.p !!!\n.prefix'
+
+    elif cmd_name == 'sub':
+        command, example = '`sub`', '.s\n.sub'
+    elif cmd_name == 'sub_set':
+        command, example = '`sub set`', '.s s\n.sub set'
+    elif cmd_name == 'sub_add':
+        command, example = '`sub add [VK Wall] (Channel Mention)`', f'.s a apiclub {ctx.channel.mention}\n.sub add 1'
+    elif cmd_name == 'sub_info':
+        command, example = '`sub info (Channel Mention)`', f'.s i {ctx.channel.mention}\n.sub info'
+    elif cmd_name == 'sub_del':
+        command, example = '`sub del [VK Wall] (Channel Mention)`', f'.s d apiclub {ctx.channel.mention}\n.sub del 1'
+
+
     error_embed.add_field(
         name = 'Command',
         value = command,

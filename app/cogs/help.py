@@ -38,8 +38,17 @@ class Help(commands.Cog):
         await ctx.send(embed=help_embed)
 
     @help.error
-    async def help_error(self, ctx, error):
-        self.client.dispatch("command_error", ctx, error, force=True)
+    async def help_error(self, ctx, exc):
+        pass
+
+
+name = 'Help'
 
 def setup(client):
-    client.add_cog(Help(client))
+    print(f'Load COG {name}')
+    cog = Help(client)
+    client.add_cog(cog)
+
+def teardown(client):
+    print(f'Unload COG {name}')
+    client.remove_cog(name)

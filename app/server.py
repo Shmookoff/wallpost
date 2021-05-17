@@ -1,7 +1,6 @@
 from quart import Quart, redirect, request
 from discord.ext import ipc
 import requests
-import psycopg2
 import json
 from rsc.config import vk_sets, sets
 
