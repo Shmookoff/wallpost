@@ -12,7 +12,6 @@ sets = {
     "ipcSecretKey": os.environ.get("IPC_SECRET"),
     "dcToken": os.environ.get("DC_SECRET"),
     "psqlUri": os.environ.get("DATABASE_URL"),
-    "url": os.environ.get("WALLPOST_URL")
 }
 
 
