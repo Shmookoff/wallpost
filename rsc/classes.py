@@ -19,11 +19,9 @@ class Server:
     all = []
     temp_data = []
 
-    def __init__(self, id, prefix, lang, token):
+    def __init__(self, id, lang, token):
         self.id = id
         self.token = token
-
-        self.prefix = prefix if (prefix is not None) else "."
         self.lang = lang if (lang is not None) else "en"
 
         self.channels = []
@@ -31,8 +29,8 @@ class Server:
         Server.all.append(self)
 
     @classmethod
-    def init(cls, id, prefix, lang, token):
-        self = cls(id, prefix, lang, token)
+    def init(cls, id, lang, token):
+        self = cls(id, lang, token)
         print(f'Init {self}')
         return self
 
@@ -48,7 +46,7 @@ class Server:
 
     @classmethod
     async def add(cls, id):
-        self = cls(id, None, None, None)
+        self = cls(id, None, None)
         async with aiopg.connect(sets["psqlUri"]) as conn:
             async with conn.cursor(cursor_factory=DictCursor) as cur:
                 await cur.execute("INSERT INTO server (id) VALUES(%s)", (self.id,))
@@ -78,17 +76,6 @@ class Server:
 
     async def set_lang(self, lang):
         pass
-
-    async def set_prefix(self, prefix):
-        if prefix == '.': prefix = None
-        
-        self.prefix = prefix if prefix is not None else '.'
-
-        async with aiopg.connect(sets["psqlUri"]) as conn:
-            async with conn.cursor(cursor_factory=DictCursor) as cur:
-                await cur.execute("UPDATE server SET prefix = %s WHERE id = %s", (prefix, self.id))
-
-        return self.prefix
 
     def find_channel(self, id):
         for channel in self.channels:

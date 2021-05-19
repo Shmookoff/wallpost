@@ -20,7 +20,7 @@ vk = asyncio.get_event_loop().run_until_complete(get_vk_info())
 
 def chn_service_or_owner():
     def predicate(ctx):
-        return ctx.channel.id == sets["srvcChnId"] or ctx.message.author.id == 278812491377672201
+        return ctx.channel_id == sets["srvcChnId"]
     return commands.check(predicate)
 
 
@@ -184,25 +184,16 @@ def set_error_embed(d):
     return discord.Embed(title=sets["errorTitle"], color=sets["errorColor"], description=d)
 
 def add_command_and_example(ctx, error_embed):
-    cmd_name = ctx.command.name
+    if ctx.name == 'help':
+        command, example = '`/help (Command)`', '/h sub\n/help'
 
-
-    if cmd_name == 'help':
-        command, example = '`help (Command)`', '.h sub\n.help'
-
-    elif cmd_name == 'prefix':
-        command, example = '`prefix (Prefix to set)`', '.p !!!\n.prefix'
-
-    elif cmd_name == 'sub':
-        command, example = '`sub`', '.s\n.sub'
-    elif cmd_name == 'sub_set':
-        command, example = '`sub set`', '.s s\n.sub set'
-    elif cmd_name == 'sub_add':
-        command, example = '`sub add [VK Wall] (Channel Mention)`', f'.s a apiclub {ctx.channel.mention}\n.sub add 1'
-    elif cmd_name == 'sub_info':
-        command, example = '`sub info (Channel Mention)`', f'.s i {ctx.channel.mention}\n.sub info'
-    elif cmd_name == 'sub_del':
-        command, example = '`sub del [VK Wall] (Channel Mention)`', f'.s d apiclub {ctx.channel.mention}\n.sub del 1'
+    elif ctx.name == 'subs':
+        if ctx.subcommand_name == 'add':
+            command, example = '`/subs add [wall_id] (channel)`', f'/subs add apiclub {ctx.channel.mention}\n/subs add 1'
+        elif ctx.subcommand_name == 'info':
+            command, example = '`/subs info (channel)`', f'/subs info {ctx.channel.mention}\n/subs info'
+        elif ctx.subcommand_name == 'del':
+            command, example = '`/subs del [wall_id] (channel)`', f'/subs del apiclub {ctx.channel.mention}\n/subs del 1'
 
 
     error_embed.add_field(

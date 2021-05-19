@@ -1,5 +1,6 @@
 import discord
 from discord.ext import commands, ipc
+from discord_slash import SlashCommand, utils
 
 import aiopg
 from psycopg2.extras import DictCursor
@@ -11,6 +12,7 @@ from rsc.config import sets
 from rsc.classes import Server
 
 
+from discord_slash.utils.manage_commands import create_option, create_choice
 class WallPost(commands.Bot):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -73,7 +75,9 @@ class WallPost(commands.Bot):
     async def on_guild_remove(self, guild):
         await Server.find_by_args(guild.id).delete()
 
+
 if __name__ == '__main__':
-    client = WallPost(command_prefix=lambda _, msg: Server.find_by_args(msg.guild.id).prefix, activity=discord.Activity(name='.help', type=0))
+    client = WallPost(command_prefix='.', activity=discord.Activity(name='/subs add', type=0))
+    SlashCommand(client, sync_commands=True, sync_on_cog_reload=True)
     client.ipc.start()
     client.run(sets["dcToken"])
