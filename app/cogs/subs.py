@@ -15,18 +15,25 @@ import texttable
 from cryptography.fernet import Fernet
 
 from rsc.config import sets
-from rsc.functions import user_compile_embed, add_command_and_example, group_compile_embed, set_error_embed, vk
+from rsc.functions import user_compile_embed, add_command_and_example, group_compile_embed, vk
 from rsc.classes import Server, Channel, Subscription
 from rsc.exceptions import *
 
 
 class Subscriptions(commands.Cog):
+    __name__ = 'Subscriptions Command'
+
     def __init__(self, client):
+        print(f'Load COG {self.__name__}')
+
         self.client = client
         self.loop = client.loop
         self.loop.create_task(self.ainit())
 
-    guild_ids = [817700627605749781]
+    def cog_unload(self):
+        print(f'Unload COG {self.__name__}')
+        Server.uninit_all()
+
 
     async def ainit(self):
         async with aiopg.connect(sets["psqlUri"]) as conn:
@@ -50,16 +57,14 @@ class Subscriptions(commands.Cog):
                                     _sub = Subscription.init(_chn, {
                                         'vk_id': sub['vk_id'], 'vk_type': sub['vk_type'], 'long_poll': sub['long_poll'], 'last_post_id': sub['last_post_id'], 'token': sub['token']
                                     })
-
-                    print()
-
                 del srvs, chns, subs
+        print()
 
 
-    @cog_ext.cog_subcommand(base='subs',
-                            name='add',
+    @cog_ext.cog_subcommand(name='add',
+                            base='subs',
                             description='Subscribe Channel to VK Wall',
-                            guild_ids=guild_ids,
+                            guild_ids=[sets['srvcSrv']],
                             options=[create_option(
                                 name='wall_id',
                                 description='Can be both VK Wall ID and Short-name',
@@ -139,10 +144,10 @@ class Subscriptions(commands.Cog):
 
         else: raise VkWallBlocked
 
-    @cog_ext.cog_subcommand(base='subs',
-                            name='info',
+    @cog_ext.cog_subcommand(name='info',
+                            base='subs',
                             description='Show all Subscriptions for Channel',
-                            guild_ids=guild_ids,
+                            guild_ids=[sets['srvcSrv']],
                             options=[create_option(
                                 name='channel',
                                 description='Default: current Channel',
@@ -213,10 +218,10 @@ class Subscriptions(commands.Cog):
 
         await ctx.send(f"**Wall subscriptions for **{channel.mention}** channel:**\n```{table.draw()}```", embed=embed)
 
-    @cog_ext.cog_subcommand(base='subs',
-                            name='del',
+    @cog_ext.cog_subcommand(name='del',
+                            base='subs',
                             description='Unsubscribe Channel from VK Wall',
-                            guild_ids=guild_ids,
+                            guild_ids=[sets['srvcSrv']],
                             options=[create_option(
                                 name='wall_id',
                                 description='Can be both VK Wall ID and Short-name',
@@ -311,10 +316,10 @@ class Subscriptions(commands.Cog):
 
         else: raise VkWallBlocked
 
-    @cog_ext.cog_subcommand(base='subs',
-                            name='account',
+    @cog_ext.cog_subcommand(name='account',
+                            base='subs',
                             description='Show VK Account linked to this Server',
-                            guild_ids=guild_ids)
+                            guild_ids=[sets['srvcSrv']])
     @commands.has_permissions(administrator=True)
     async def account(self, ctx):
         vk_token = Server.find_by_args(ctx.guild.id).token
@@ -327,10 +332,10 @@ class Subscriptions(commands.Cog):
             user_embed = user_compile_embed((await vkapi.users.get(fields='photo_max,status,screen_name,followers_count,counters', v='5.130'))[0])
         await ctx.send(f'**{ctx.guild.name}** is linked to this account.\nYou can change it with `/subs link` command.', embed=user_embed)
 
-    @cog_ext.cog_subcommand(base='subs',
-                            name='link',
+    @cog_ext.cog_subcommand(name='link',
+                            base='subs',
                             description='Link this Server to your VK Account',
-                            guild_ids=guild_ids)
+                            guild_ids=[sets['srvcSrv']])
     @commands.has_permissions(administrator=True)
     async def link(self, ctx):
         key = Fernet.generate_key().decode("utf-8")
@@ -422,14 +427,5 @@ class Subscriptions(commands.Cog):
         return 'Your account is now bound to the server. You can now close this tab.'
 
 
-name = 'Subscriptions'
-
 def setup(client):
-    print(f'Load COG {name}')
-    cog = Subscriptions(client)
-    client.add_cog(cog)
-
-def teardown(client):
-    print(f'Unload COG {name}')
-    Server.uninit_all()
-    client.remove_cog(name)
+    client.add_cog(Subscriptions(client))

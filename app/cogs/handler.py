@@ -13,10 +13,19 @@ from rsc.exceptions import *
 
 
 class ExceptionHandler(commands.Cog):
+    __name__ = 'Exception Handler'
+
     def __init__(self, client):
+        print(f'Load COG {self.__name__}')
+
         self.client = client
         self.log_chn = client.get_channel(sets["logChnId"])
-        print(f'    Set LOG_CHN {self.log_chn.name} at {self.log_chn.guild.name}\n')
+
+        print(f'\tSet LOG_CHN {self.log_chn.name} at {self.log_chn.guild.name}')
+
+    def cog_unload(self):
+        print(f'Unload COG {self.__name__}')
+
 
     @commands.Cog.listener()
     async def on_command_error(self, ctx, exc):
@@ -93,13 +102,5 @@ class ExceptionHandler(commands.Cog):
         await self.log_chn.send(f'Ignoring exception in `{endpoint}` endpoint:\n```py\n{tb}\n```')
 
 
-name = 'ExceptionHandler'
-
 def setup(client):
-    print(f'Load {name}')
-    cog = ExceptionHandler(client)
-    client.add_cog(cog)
-
-def teardown(client):
-    print(f'Unload {name}')
-    client.remove_cog(name)
+    client.add_cog(ExceptionHandler(client))

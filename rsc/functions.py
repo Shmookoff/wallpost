@@ -20,8 +20,6 @@ vk = asyncio.get_event_loop().run_until_complete(get_vk_info())
 
 def check_service_chn():
     def predicate(ctx):
-        print(hasattr(ctx, 'channel_id'))
-        print()
         if hasattr(ctx, 'channel_id'):
             return ctx.channel_id == sets["srvcChnId"]
         return ctx.channel.id == sets["srvcChnId"]
