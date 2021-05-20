@@ -1,6 +1,6 @@
 import discord
 from discord.ext import commands, ipc
-from discord_slash import SlashCommand, utils
+from discord_slash import SlashCommand
 
 import aiopg
 from psycopg2.extras import DictCursor
@@ -12,14 +12,15 @@ from rsc.config import sets
 from rsc.classes import Server
 
 
-from discord_slash.utils.manage_commands import create_option, create_choice
 class WallPost(commands.Bot):
+    __name__ = 'WallPost'
+
     def __init__(self, *args, **kwargs):
+        print(f"Start INIT {__name__}\n")
+
         super().__init__(*args, **kwargs)
 
-        self.__name__ = 'WallPost'
-        print(f"Start INIT {self.__name__}\n")
-
+        self.servers = [817700627605749781]
         self.ipc = ipc.Server(self, secret_key = sets['ipcSecretKey'])
 
         self.remove_command('help')

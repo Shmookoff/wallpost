@@ -7,7 +7,7 @@ import sys
 import contextlib
 import io
 
-from rsc.functions import chn_service_or_owner
+from rsc.functions import check_service_chn
 
 
 class Executor(commands.Cog):
@@ -15,7 +15,7 @@ class Executor(commands.Cog):
         self.client = client
 
     @commands.command(aliases=['e'])
-    @chn_service_or_owner()
+    @check_service_chn()
     async def execute(self, ctx, *, code):
         if code.startswith('```py') and code.endswith('```'):
             code = code[5:-3]

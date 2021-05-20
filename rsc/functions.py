@@ -18,9 +18,13 @@ async def get_vk_info():
     return {'name': vk_info[0]['name'], 'photo': vk_info[0]['photo_200']}
 vk = asyncio.get_event_loop().run_until_complete(get_vk_info())
 
-def chn_service_or_owner():
+def check_service_chn():
     def predicate(ctx):
-        return ctx.channel_id == sets["srvcChnId"]
+        print(hasattr(ctx, 'channel_id'))
+        print()
+        if hasattr(ctx, 'channel_id'):
+            return ctx.channel_id == sets["srvcChnId"]
+        return ctx.channel.id == sets["srvcChnId"]
     return commands.check(predicate)
 
 
@@ -184,17 +188,13 @@ def set_error_embed(d):
     return discord.Embed(title=sets["errorTitle"], color=sets["errorColor"], description=d)
 
 def add_command_and_example(ctx, error_embed):
-    if ctx.name == 'help':
-        command, example = '`/help (Command)`', '/h sub\n/help'
-
-    elif ctx.name == 'subs':
+    if ctx.name == 'subs':
         if ctx.subcommand_name == 'add':
             command, example = '`/subs add [wall_id] (channel)`', f'/subs add apiclub {ctx.channel.mention}\n/subs add 1'
         elif ctx.subcommand_name == 'info':
             command, example = '`/subs info (channel)`', f'/subs info {ctx.channel.mention}\n/subs info'
         elif ctx.subcommand_name == 'del':
             command, example = '`/subs del [wall_id] (channel)`', f'/subs del apiclub {ctx.channel.mention}\n/subs del 1'
-
 
     error_embed.add_field(
         name = 'Command',

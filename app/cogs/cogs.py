@@ -5,12 +5,13 @@ from discord_slash.utils.manage_commands import create_option, create_choice
 
 import os
 
-from rsc.functions import chn_service_or_owner
+from rsc.functions import check_service_chn
 
 
 class Cogs(commands.Cog):
     def __init__(self, client):
         self.client = client
+        print(client.servers)
 
     guild_ids = [817700627605749781]
     choices = [create_choice(
@@ -22,24 +23,22 @@ class Cogs(commands.Cog):
                     name='Cogs Command'
                 ),
                 create_choice(
-                    value='help',
-                    name='Help Command'
-                ),
-                create_choice(
                     value='executor',
                     name='Code Executor'
                 ),
                 create_choice(
                     value='handler',
                     name='Exception Handler'
-                )]
+                )] 
 
     @cog_ext.cog_subcommand(base='cogs',
+                            base_desc='Admins only',
                             name='list',
                             description='List loaded cogs',
                             guild_ids=guild_ids,
                             )
-    async def _list(self, ctx):
+    @check_service_chn()
+    async def cogs_list(self, ctx):
         cogs = self.client.extensions
         msg = '__Loaded cogs:__\n'
         n = 0
@@ -61,7 +60,8 @@ class Cogs(commands.Cog):
                                 required=False,
                                 choices=choices
                             )])
-    async def load(self, ctx, cog=None):
+    @check_service_chn()
+    async def cogs_load(self, ctx, cog=None):
         if cog == None: 
             msg, n = '✅ __Successfully loaded cogs:__\n', 0
             for filename in os.listdir('app/cogs'):
@@ -95,7 +95,8 @@ class Cogs(commands.Cog):
                                 required=False,
                                 choices=choices
                             )])
-    async def reload(self, ctx, cog=None):
+    @check_service_chn()
+    async def cogs_reload(self, ctx, cog=None):
         if cog == None: 
             msg, n = '✅ __Successfully reloaded cogs:__\n', 0
             for filename in os.listdir('app/cogs'):
@@ -130,7 +131,8 @@ class Cogs(commands.Cog):
                                 required=False,
                                 choices=choices
                             )])
-    async def unload(self, ctx, cog=None):
+    @check_service_chn()
+    async def cogs_unload(self, ctx, cog=None):
         if cog == None: 
             msg, n = '✅ __Successfully unloaded cogs:__\n', 0
             for filename in os.listdir('app/cogs'):
