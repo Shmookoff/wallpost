@@ -11,8 +11,16 @@ from rsc.functions import check_service_chn
 
 
 class Executor(commands.Cog):
+    __name__ = 'Executor'
+    
     def __init__(self, client):
+        print(f'Load COG {self.__name__}')
+
         self.client = client
+
+    def cog_unload(self):
+        print(f'Unload COG {self.__name__}')
+
 
     @commands.command(aliases=['e'])
     @check_service_chn()
@@ -42,14 +50,6 @@ class Executor(commands.Cog):
             await chn.send(msg)
         self.client.loop.create_task(f(chn, msg))
 
-    
-name = 'Executor'
 
 def setup(client):
-    print(f'Load COG {name}')
-    cog = Executor(client)
-    client.add_cog(cog)
-
-def teardown(client):
-    print(f'Unload COG {name}')
-    client.remove_cog(name)
+    client.add_cog(Executor(client))

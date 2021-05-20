@@ -5,37 +5,39 @@ from discord_slash.utils.manage_commands import create_option, create_choice
 
 import os
 
+from rsc.config import sets
 from rsc.functions import check_service_chn
 
 
 class Cogs(commands.Cog):
-    def __init__(self, client):
-        self.client = client
-        print(client.servers)
-
-    guild_ids = [817700627605749781]
+    __name__ = 'Cogs Command'
     choices = [create_choice(
                     value='subs',
                     name='Subsciptions Command'
-                ),
-                create_choice(
+                ), create_choice(
                     value='cogs',
                     name='Cogs Command'
-                ),
-                create_choice(
+                ), create_choice(
                     value='executor',
                     name='Code Executor'
-                ),
-                create_choice(
+                ), create_choice(
                     value='handler',
                     name='Exception Handler'
-                )] 
+                )]
 
-    @cog_ext.cog_subcommand(base='cogs',
-                            base_desc='Admins only',
-                            name='list',
+    def __init__(self, client):
+        print(f'Load COG {self.__name__}')
+
+        self.client = client
+
+    def cog_unload(self):
+        print(f'Unload COG {self.__name__}')
+
+
+    @cog_ext.cog_subcommand(name='list',
+                            base='cogs',
                             description='List loaded cogs',
-                            guild_ids=guild_ids,
+                            guild_ids=[sets['srvcSrv']],
                             )
     @check_service_chn()
     async def cogs_list(self, ctx):
@@ -49,10 +51,10 @@ class Cogs(commands.Cog):
             msg += '`None`'
         await ctx.send(msg)
 
-    @cog_ext.cog_subcommand(base='cogs',
-                            name='load',
+    @cog_ext.cog_subcommand(name='load',
+                            base='cogs',
                             description='Load all cogs or a specific one',
-                            guild_ids=guild_ids,
+                            guild_ids=[sets['srvcSrv']],
                             options=[create_option(
                                 name='cog',
                                 description='Cog to load',
@@ -74,6 +76,8 @@ class Cogs(commands.Cog):
                         msg += f'**{n}.** `{filename[:-3]}`\n'
             if n == 0:
                 msg += '`None`'
+            else:
+                print()
             await ctx.send(msg)
         else:
             try: self.client.load_extension(f'app.cogs.{cog}')
@@ -84,10 +88,10 @@ class Cogs(commands.Cog):
             else: msg = f'✅ `{cog}` loaded!'
             await ctx.send(msg)
 
-    @cog_ext.cog_subcommand(base='cogs',
-                            name='reload',
+    @cog_ext.cog_subcommand(name='reload',
+                            base='cogs',
                             description='Reload all cogs or a specific one',
-                            guild_ids=guild_ids,
+                            guild_ids=[sets['srvcSrv']],
                             options=[create_option(
                                 name='cog',
                                 description='Cog to reload',
@@ -109,6 +113,8 @@ class Cogs(commands.Cog):
                         msg += f'**{n}.** `{filename[:-3]}`\n'
             if n == 0:
                 msg += '`None`'
+            else:
+                print()
             await ctx.send(msg)
         else: 
             try: self.client.reload_extension(f'app.cogs.{cog}')
@@ -120,10 +126,10 @@ class Cogs(commands.Cog):
                 msg = f'✅ `{cog}` reloaded!'
             await ctx.send(msg)
 
-    @cog_ext.cog_subcommand(base='cogs',
-                            name='unload',
+    @cog_ext.cog_subcommand(name='unload',
+                            base='cogs',
                             description='Unload all cogs or a specific one',
-                            guild_ids=guild_ids,
+                            guild_ids=[sets['srvcSrv']],
                             options=[create_option(
                                 name='cog',
                                 description='Cog to unload',
@@ -145,6 +151,8 @@ class Cogs(commands.Cog):
                         msg += f'**{n}.** `{filename[:-3]}`\n'
             if n == 0:
                 msg += '`None`'
+            else:
+                print()
             await ctx.send(msg)
         else:
             try: self.client.unload_extension(f'app.cogs.{cog}')
@@ -157,13 +165,5 @@ class Cogs(commands.Cog):
             await ctx.send(msg)
 
 
-name = 'Cogs'
-
 def setup(client):
-    print(f'Load COG {name}')
-    cog = Cogs(client)
-    client.add_cog(cog)
-
-def teardown(client):
-    print(f'Unload COG {name}')
-    client.remove_cog(name)
+    client.add_cog(Cogs(client))

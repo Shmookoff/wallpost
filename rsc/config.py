@@ -9,6 +9,8 @@ sets = {
     "errorTitle": "ERROR",
     "errorColor": 16711680,
 
+    "srvcSrv": 817700627605749781,
+
     "ipcSecretKey": os.environ.get("IPC_SECRET"),
     "dcToken": os.environ.get("DC_SECRET"),
     "psqlUri": os.environ.get("DATABASE_URL"),
