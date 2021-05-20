@@ -64,7 +64,6 @@ class Subscriptions(commands.Cog):
     @cog_ext.cog_subcommand(name='add',
                             base='subs',
                             description='Subscribe Channel to VK Wall',
-                            guild_ids=[sets['srvcSrv']],
                             options=[create_option(
                                 name='wall_id',
                                 description='Can be both VK Wall ID and Short-name',
@@ -147,7 +146,6 @@ class Subscriptions(commands.Cog):
     @cog_ext.cog_subcommand(name='info',
                             base='subs',
                             description='Show all Subscriptions for Channel',
-                            guild_ids=[sets['srvcSrv']],
                             options=[create_option(
                                 name='channel',
                                 description='Default: current Channel',
@@ -221,7 +219,6 @@ class Subscriptions(commands.Cog):
     @cog_ext.cog_subcommand(name='del',
                             base='subs',
                             description='Unsubscribe Channel from VK Wall',
-                            guild_ids=[sets['srvcSrv']],
                             options=[create_option(
                                 name='wall_id',
                                 description='Can be both VK Wall ID and Short-name',
@@ -318,8 +315,7 @@ class Subscriptions(commands.Cog):
 
     @cog_ext.cog_subcommand(name='account',
                             base='subs',
-                            description='Show VK Account linked to this Server',
-                            guild_ids=[sets['srvcSrv']])
+                            description='Show VK Account linked to this Server')
     @commands.has_permissions(administrator=True)
     async def account(self, ctx):
         vk_token = Server.find_by_args(ctx.guild.id).token
@@ -334,8 +330,7 @@ class Subscriptions(commands.Cog):
 
     @cog_ext.cog_subcommand(name='link',
                             base='subs',
-                            description='Link this Server to your VK Account',
-                            guild_ids=[sets['srvcSrv']])
+                            description='Link this Server to your VK Account')
     @commands.has_permissions(administrator=True)
     async def link(self, ctx):
         key = Fernet.generate_key().decode("utf-8")
