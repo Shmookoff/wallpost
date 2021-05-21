@@ -3,6 +3,7 @@ from discord.ext import commands
 
 import traceback
 import sys
+from io import StringIO
 
 import discord_slash.error as slash_errors
 import aiovk.exceptions as aiovk_errors
@@ -19,9 +20,8 @@ class ExceptionHandler(commands.Cog):
         print(f'Load COG {self.__name__}')
 
         self.client = client
-        self.log_chn = client.get_channel(sets["logChnId"])
 
-        print(f'\tSet LOG_CHN {self.log_chn.name} at {self.log_chn.guild.name}')
+        print(f'\tSet LOG_CHN {self.client.log_chn.name} at {self.client.log_chn.guild.name}')
 
     def cog_unload(self):
         print(f'Unload COG {self.__name__}')
@@ -38,9 +38,13 @@ class ExceptionHandler(commands.Cog):
                 if hasattr(exc, 'embed'):
                     await ctx.send(embed=exc.embed)
                 else:
-                    tb = "".join(traceback.format_exception(type(exc), exc, exc.__traceback__))
-                    print(f'Ignoring exception in command {ctx.command}:\n{tb}', file=sys.stderr)
-                    await self.log_chn.send(f'Ignoring exception in command `{ctx.command}`:\n```py\n{tb}\n```')
+                    tb = traceback.format_exc()
+                    print(f'Ignoring exception in COMMAND .{ctx.command}.\nParams: {ctx.kwargs}\n{tb}', file=sys.stderr)
+                    msg = f'Ignoring exception in *COMMAND* `.{ctx.command}`.\nParams: `{ctx.kwargs}`\n```py\n{tb}\n```'
+                    if len(msg) <= 2000:
+                        await self.client.log_chn.send(msg)
+                    else:
+                        await self.client.log_chn.send(f'Ignoring exception in *COMMAND* `.{ctx.command}`.\nParams: `{ctx.kwargs}`', file=discord.File(StringIO(tb), filename='traceback.txt'))
 
     @commands.Cog.listener()
     async def on_slash_command_error(self, ctx, exc):
@@ -91,15 +95,23 @@ class ExceptionHandler(commands.Cog):
             else:
                 await ctx.send(embed=exc.embed)
         else:
-            tb = "".join(traceback.format_exception(type(exc), exc, exc.__traceback__))
-            print(f'Ignoring exception in command {ctx.command}:\n{tb}', file=sys.stderr)
-            await self.log_chn.send(f'Ignoring exception in command `{ctx.command}`:\n```py\n{tb}\n```')   
+            tb = traceback.format_exc()
+            print(f'Ignoring exception in COMMAND `/{ctx.name}{" "+ctx.subcommand_name if ctx.subcommand_name is not None else ""}`:\nParams: {ctx.kwargs}\n{tb}', file=sys.stderr)
+            msg = f'Ignoring exception in *COMMAND* `/{ctx.name}{" "+ctx.subcommand_name if ctx.subcommand_name is not None else ""}`:\nParams: `{ctx.kwargs}`\n```py\n{tb}\n```'
+            if len(msg) <= 2000:
+                await self.client.log_chn.send(msg)
+            else:
+                await self.client.log_chn.send(f'Ignoring exception in *COMMAND* `/{ctx.name}{" "+ctx.subcommand_name if ctx.subcommand_name is not None else ""}`:\nParams: `{ctx.kwargs}`', file=discord.File(StringIO(tb), filename='traceback.txt'))
 
     @commands.Cog.listener()
     async def on_ipc_error(self, endpoint, exc):
-        tb = "".join(traceback.format_exception(type(exc), exc, exc.__traceback__))
-        print(f'Ignoring exception in {endpoint} endpoint:\n{tb}', file=sys.stderr)
-        await self.log_chn.send(f'Ignoring exception in `{endpoint}` endpoint:\n```py\n{tb}\n```')
+        tb = traceback.format_exc()
+        print(f'Ignoring exception in {endpoint} IPC ENDPOINT.\n{tb}', file=sys.stderr)
+        msg = f'Ignoring exception in `{endpoint}` *IPC ENDPOINT*:\n```py\n{tb}\n```'
+        if len(msg) <= 2000:
+            await self.client.log_chn.send(msg)
+        else:
+            await self.client.log_chn.send(f'Ignoring exception in `{endpoint}` *IPC ENDPOINT*:', file=discord.File(StringIO(tb), filename='traceback.txt'))
 
 
 def setup(client):

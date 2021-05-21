@@ -6,7 +6,9 @@ import aiopg
 from psycopg2.extras import DictCursor
 
 import os
-from cryptography.fernet import Fernet
+import traceback
+import sys
+from io import StringIO
 
 from rsc.config import sets
 from rsc.classes import Server
@@ -21,7 +23,6 @@ class WallPost(commands.Bot):
         super().__init__(*args, **kwargs)
 
         self.ipc = ipc.Server(self, secret_key = sets['ipcSecretKey'])
-
         self.remove_command('help')
 
     async def on_ready(self):
@@ -55,6 +56,7 @@ class WallPost(commands.Bot):
         if _check:
             print()
 
+        self.log_chn = client.get_channel(sets["logChnId"])
         self.slash = SlashCommand(self, sync_commands=True, sync_on_cog_reload=True)
 
         try: self.load_extension('app.cogs.handler')
@@ -79,6 +81,18 @@ class WallPost(commands.Bot):
 
     async def on_guild_remove(self, guild):
         await Server.find_by_args(guild.id).delete()
+
+    async def on_error(self, event, *args, **kwargs):
+        tb = traceback.format_exc()
+        print(f'Ignoring exception in {event}:\n{tb}', file=sys.stderr)
+        try:
+            msg = f'Ignoring exception in `{event}`:\n```py\n{tb}\n```'
+            if len(msg) <= 2000:
+                await self.log_chn.send(msg)
+            else:
+                await self.log_chn.send(f'Ignoring exception in `{event}`:', file=discord.File(StringIO(tb), filename='traceback.txt'))
+        except Exception as e:
+            pass
 
 
 if __name__ == '__main__':
