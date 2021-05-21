@@ -55,15 +55,19 @@ class WallPost(commands.Bot):
         if _check:
             print()
 
-        try: client.load_extension('app.cogs.handler')
+        self.slash = SlashCommand(self, sync_commands=True, sync_on_cog_reload=True)
+
+        try: self.load_extension('app.cogs.handler')
         except commands.ExtensionAlreadyLoaded:
-            client.reload_extension('app.cogs.handler')
+            self.reload_extension('app.cogs.handler')
         for filename in os.listdir('app/cogs'):
             if filename.endswith('.py') and filename != 'handler.py':
-                try: client.load_extension(f'app.cogs.{filename[:-3]}')
+                try: self.load_extension(f'app.cogs.{filename[:-3]}')
                 except commands.ExtensionAlreadyLoaded:
-                    client.reload_extension(f'app.cogs.{filename[:-3]}')
+                    self.reload_extension(f'app.cogs.{filename[:-3]}')
         print()
+
+        print(f'/CMNDS: {list(self.slash.commands.keys())}', end='\n\n')
 
         print(f'Done INIT {self.__name__}', end='\n\n')
 
@@ -79,6 +83,5 @@ class WallPost(commands.Bot):
 
 if __name__ == '__main__':
     client = WallPost(command_prefix='.', activity=discord.Activity(name='/subs add', type=0))
-    SlashCommand(client, sync_commands=True, sync_on_cog_reload=True)
     client.ipc.start()
     client.run(sets["dcToken"])
