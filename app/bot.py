@@ -43,7 +43,7 @@ class WallPost(commands.Bot):
             for guild in guilds_connected_array:
                 if not guild in guilds_in_db_array:
                     async with conn.cursor(cursor_factory=DictCursor) as cur:
-                        await cur.execute("INSERT INTO server (id, key, key_uuid) VALUES(%s, %s, uuid_generate_v4())", (guild, Fernet.generate_key()))
+                        await cur.execute("INSERT INTO server (id) VALUES(%s)", (guild,))
                     print(f'Register SERVER {guild} in DB')
                     if _check is False: _check = True
             for guild in guilds_in_db_array:
