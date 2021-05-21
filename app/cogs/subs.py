@@ -408,14 +408,14 @@ class Subscriptions(commands.Cog):
         try:
             temp_data = list(filter(lambda temp_data: temp_data['key'] == data.key, Server.temp_data))[0]
         except IndexError:
-            return "This link has been expired. Get a new one with `sub set` command."
+            return "This link has been expired. Get a new one with `/subs link` command."
 
         server = Server.find_by_args(temp_data['server_id'])
         await server.set_token(data.token)
 
         async with aiovk.TokenSession(server.token) as ses:
             vkapi = aiovk.API(ses)
-            await (self.client.get_channel(temp_data['channel_id']).send(f"**{self.client.get_guild(server.id).name}** is now bound to this account.\nYou can change it with `sub set` command.", embed = user_compile_embed((await vkapi.users.get(fields='photo_max,status,screen_name,followers_count,counters', v='5.130'))[0])))
+            await (self.client.get_channel(temp_data['channel_id']).send(f"**{self.client.get_guild(server.id).name}** is now bound to this account.\nYou can change it with `/subs link` command.", embed = user_compile_embed((await vkapi.users.get(fields='photo_max,status,screen_name,followers_count,counters', v='5.130'))[0])))
 
         Server.temp_data.remove(temp_data)
 
