@@ -38,13 +38,7 @@ class ExceptionHandler(commands.Cog):
                 if hasattr(exc, 'embed'):
                     await ctx.send(embed=exc.embed)
                 else:
-                    tb = traceback.format_exc()
-                    print(f'Ignoring exception in COMMAND .{ctx.command}.\nParams: {ctx.kwargs}\n{tb}', file=sys.stderr)
-                    msg = f'Ignoring exception in *COMMAND* `.{ctx.command}`.\nParams: `{ctx.kwargs}`\n```py\n{tb}\n```'
-                    if len(msg) <= 2000:
-                        await self.client.log_chn.send(msg)
-                    else:
-                        await self.client.log_chn.send(f'Ignoring exception in *COMMAND* `.{ctx.command}`.\nParams: `{ctx.kwargs}`', file=discord.File(StringIO(tb), filename='traceback.txt'))
+                    await self.client.error_handler('command', ctx=ctx, exc=exc)
 
     @commands.Cog.listener()
     async def on_slash_command_error(self, ctx, exc):
@@ -95,24 +89,11 @@ class ExceptionHandler(commands.Cog):
             else:
                 await ctx.send(embed=exc.embed)
         else:
-            tb = traceback.format_exc()
-            print(f'Ignoring exception in COMMAND `/{ctx.name}{" "+ctx.subcommand_name if ctx.subcommand_name is not None else ""}`:\nParams: {ctx.kwargs}\n{tb}', file=sys.stderr)
-            msg = f'Ignoring exception in *COMMAND* `/{ctx.name}{" "+ctx.subcommand_name if ctx.subcommand_name is not None else ""}`:\nParams: `{ctx.kwargs}`\n```py\n{tb}\n```'
-            if len(msg) <= 2000:
-                await self.client.log_chn.send(msg)
-            else:
-                await self.client.log_chn.send(f'Ignoring exception in *COMMAND* `/{ctx.name}{" "+ctx.subcommand_name if ctx.subcommand_name is not None else ""}`:\nParams: `{ctx.kwargs}`', file=discord.File(StringIO(tb), filename='traceback.txt'))
+            await self.client.error_handler('slash_command', ctx=ctx, exc=exc)
 
     @commands.Cog.listener()
     async def on_ipc_error(self, endpoint, exc):
-        tb = traceback.format_exc()
-        print(f'Ignoring exception in {endpoint} IPC ENDPOINT.\n{tb}', file=sys.stderr)
-        msg = f'Ignoring exception in `{endpoint}` *IPC ENDPOINT*:\n```py\n{tb}\n```'
-        if len(msg) <= 2000:
-            await self.client.log_chn.send(msg)
-        else:
-            await self.client.log_chn.send(f'Ignoring exception in `{endpoint}` *IPC ENDPOINT*:', file=discord.File(StringIO(tb), filename='traceback.txt'))
-
+        await self.client.error_handler('endpoint', endpoint=endpoint, exc=exc)
 
 def setup(client):
     client.add_cog(ExceptionHandler(client))

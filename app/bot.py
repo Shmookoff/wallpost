@@ -83,16 +83,33 @@ class WallPost(commands.Bot):
         await Server.find_by_args(guild.id).delete()
 
     async def on_error(self, event, *args, **kwargs):
-        tb = traceback.format_exc()
-        print(f'Ignoring exception in {event}:\n{tb}', file=sys.stderr)
+        await self.error_handler('general', event=event)
+
+    async def error_handler(self, raised, **kwargs):
+        if raised == 'general':
+            tb = traceback.format_exc()
+            msg = f'Ignoring exception in `{kwargs["event"]}`:'
+            print_msg = f'Ignoring exception in {kwargs["event"]}:'
+        else:
+            tb = "".join(traceback.format_exception(type(kwargs["exc"]), kwargs["exc"], kwargs["exc"].__traceback__))
+            if raised in ['slash_command', 'command']:
+                if raised == 'slash_command':
+                    cmnd_name = f'/{kwargs["ctx"].name}{" "+kwargs["ctx"].subcommand_name if kwargs["ctx"].subcommand_name is not None else ""}'
+                elif raised == 'command':
+                    cmnd_name = f'.{kwargs["ctx"].command}'
+                msg = f'Ignoring exception in **COMMAND** `{cmnd_name}`:\nParams: `{kwargs["ctx"].kwargs}`'
+                print_msg = f'Ignoring exception in COMMAND {cmnd_name}:\nParams: {kwargs["ctx"].kwargs}'
+            elif raised == 'endpoint':
+                msg = f'Ignoring exception in `{kwargs["endpoint"]}` **IPC ENDPOINT**:'
+                print_msg = f'Ignoring exception in {kwargs["endpoint"]} IPC ENDPOINT:'
+        print(f'{print_msg}\n{tb}')
         try:
-            msg = f'Ignoring exception in `{event}`:\n```py\n{tb}\n```'
-            if len(msg) <= 2000:
-                await self.log_chn.send(msg)
+            if len(f'{msg}\n```py\n{tb}\n```') <= 2000:
+                await self.log_chn.send(f'{msg}\n```py\n{tb}\n```')
             else:
-                await self.log_chn.send(f'Ignoring exception in `{event}`:', file=discord.File(StringIO(tb), filename='traceback.txt'))
-        except Exception as e:
-            pass
+                await self.log_chn.send(msg, file=discord.File(StringIO(tb), filename='traceback.python'))
+        except Exception as exc:
+            print(f'An exception has occured while handilng {raised} error:\n{traceback.format_exc()}', end='\n\n')
 
 
 if __name__ == '__main__':
