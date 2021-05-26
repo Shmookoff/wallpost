@@ -334,7 +334,6 @@ class Subscriptions(commands.Cog):
     @commands.has_permissions(administrator=True)
     async def link(self, ctx):
         key = Fernet.generate_key().decode("utf-8")
-        Server.temp_data.append({"key": key, "server_id": ctx.guild.id, "channel_id": ctx.channel.id})
         embed = discord.Embed(
             title = 'Authentication',
             url = f'{sets["url"]}/oauth2/login?key={key}',
@@ -344,7 +343,8 @@ class Subscriptions(commands.Cog):
         embed.set_thumbnail(url=vk['photo'])
         embed.set_footer(text=vk['name'], icon_url=vk['photo'])
 
-        await ctx.send('Check your DM for an authentication link!')
+        ctx.msg = await ctx.send('Check your DM for an authentication link!')
+        Server.temp_data.append({"key": key, "server_id": ctx.guild.id, "chn_id": ctx.channel.id, "msg_id": ctx.msg.id})
         await ctx.author.send(embed=embed)
 
 
@@ -415,7 +415,9 @@ class Subscriptions(commands.Cog):
 
         async with aiovk.TokenSession(server.token) as ses:
             vkapi = aiovk.API(ses)
-            await (self.client.get_channel(temp_data['channel_id']).send(f"**{self.client.get_guild(server.id).name}** is now bound to this account.\nYou can change it with `/subs link` command.", embed = user_compile_embed((await vkapi.users.get(fields='photo_max,status,screen_name,followers_count,counters', v='5.130'))[0])))
+            user = (await vkapi.users.get(fields='photo_max,status,screen_name,followers_count,counters', v='5.130'))[0]
+        msg = self.client.get_channel(temp_data["chn_id"]).get_partial_message(temp_data['msg_id'])
+        await msg.edit(content=f"**{self.client.get_guild(server.id).name}** is now linked to this account.\nYou can change it with `/subs link` command.", embed=user_compile_embed(user))
 
         Server.temp_data.remove(temp_data)
 
