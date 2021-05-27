@@ -112,7 +112,7 @@ class WallPost(commands.Bot):
         except Exception as exc:
             print(f'An exception has occured while handilng {raised} error:\n{traceback.format_exc()}', end='\n\n')
 
-    @tasks.Loop(minutes=15)
+    @tasks.loop(minutes=15)
     async def ping_server(self):
         async with aiohttp.ClientSession() as session:
             try: session.get(sets['url'])
