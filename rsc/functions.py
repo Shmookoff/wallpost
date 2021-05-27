@@ -28,73 +28,57 @@ def check_service_chn():
 
 #Subscription
 
-def group_compile_embed(group):
-    group_embed = discord.Embed(
-        title = group['name'],
-        url = f'https://vk.com/public{group["id"]}',
-        color = sets["embedColor"]
-    )
-    group_embed.set_thumbnail(url = group['photo_200'])
-    group_embed.add_field(
-        name = 'Members',
-        value = f'`{group["members_count"]}`',
-        inline = True,
-    )
-    group_embed.add_field(
-        name = 'Short address',
-        value = f'`{group["screen_name"]}`',
-        inline = True
-    )
-    if group['status'] != '':
-        group_embed.add_field(
+def compile_wall_embed(wall):
+    embed = discord.Embed(color = sets["embedColor"])
+    if wall['status'] != '':
+        embed.add_field(
             name = 'Status',
-            value = f'```{group["status"]}```',
+            value = f'```{wall["status"]}```',
             inline = False
         )
-    if group['description'] != '':
-        if len(group['description']) > 512:
-            group_embed.add_field(
-                name = 'Description',
-                value = f'{group["description"][:512]}...',
-                inline = False
-            )
-        else:
-            group_embed.add_field(
-                name = 'Description',
-                value = f'{group["description"]}',
-                inline = False
-            )
-    return group_embed
-def user_compile_embed(user):
-    user_embed = discord.Embed(
-        title = f'{user["first_name"]} {user["last_name"]}',
-        url = f'https://vk.com/id{user["id"]}',
-        color = sets["embedColor"]
-    )
-    user_embed.set_thumbnail(url = user['photo_max'])
-    user_embed.add_field(
-        name = 'Friends',
-        value = f'`{user["counters"]["friends"]}`',
+    embed.add_field(
+        name = 'Short address',
+        value = f'`{wall["screen_name"]}`',
         inline = True
     )
-    user_embed.add_field(
-        name = "Short address",
-        value = f'`{user["screen_name"]}`',
-        inline = True
-    )
-    if 'followers_count' in user:
-        user_embed.add_field(
+    if 'name' in wall:
+        embed.title = wall['name']
+        embed.url = f'https://vk.com/public{wall["id"]}'
+        embed.set_thumbnail(url=wall['photo_200'])
+        embed.add_field(
+            name = 'Members',
+            value = f'`{wall["members_count"]}`',
+            inline = True,
+        )
+        if wall['description'] != '':
+            if len(wall['description']) <= 512:
+                description = wall["description"]
+            else:
+                description = f'{wall["description"][:512]}...'
+            embed.add_field(
+                name = 'Description',
+                value = description,
+                inline = False
+            )
+        embed.set_footer(text='Group Wall', icon_url=vk['photo'])
+    else:
+        embed.title = f'{wall["first_name"]} {wall["last_name"]}'
+        embed.url = f'https://vk.com/id{wall["id"]}'
+        embed.set_thumbnail(url=wall['photo_max'])
+        embed.add_field(
             name = 'Followers',
-            value = f'`{user["followers_count"]}`',
+            value = f'`{wall["followers_count"] if "followers_count" in wall else "0"}`',
             inline = True
         )
-    if user['status'] != '':
-        user_embed.add_field(
-            name = 'Status',
-            value = f'```{user["status"]}```',
-            inline = False
-        )
-    return user_embed
+        embed.set_footer(text='User Wall', icon_url=vk['photo'])
+    embed.insert_field_at(
+        index = 3,
+        name = 'Verified',
+        value = '✅' if wall['verified'] else '❎',
+        inline = True
+    )
+    return embed
+
 def compile_post_embed(post, wall1=None):
     if wall1 is None:
         items = post['items'][0]

@@ -15,7 +15,7 @@ import texttable
 from cryptography.fernet import Fernet
 
 from rsc.config import sets
-from rsc.functions import user_compile_embed, add_command_and_example, group_compile_embed, vk
+from rsc.functions import compile_wall_embed, add_command_and_example, vk
 from rsc.classes import Server, Channel, Subscription
 from rsc.exceptions import *
 
@@ -25,6 +25,9 @@ class Subscriptions(commands.Cog):
 
     def __init__(self, client):
         print(f'Load COG {self.__name__}')
+
+        self.user_fields = 'photo_max,status,screen_name,followers_count,verified'
+        self.group_fields = 'photo_200,status,screen_name,members_count,verified,description'
 
         self.client = client
         self.loop = client.loop
@@ -42,7 +45,7 @@ class Subscriptions(commands.Cog):
                 srvs = await cur.fetchall()
                 await cur.execute("SELECT id, webhook_url, server_id FROM channel")
                 chns = await cur.fetchall()
-                await cur.execute("SELECT vk_id, vk_type, long_poll, last_post_id, token, channel_id FROM subscription")
+                await cur.execute("SELECT vk_id, vk_type, long_poll, last_post_id, token, channel_id, added_by FROM subscription")
                 subs = await cur.fetchall()
 
                 for srv in srvs:
@@ -55,7 +58,7 @@ class Subscriptions(commands.Cog):
                             for sub in subs:
                                 if sub['channel_id'] == _chn.id:
                                     _sub = Subscription.init(_chn, {
-                                        'vk_id': sub['vk_id'], 'vk_type': sub['vk_type'], 'long_poll': sub['long_poll'], 'last_post_id': sub['last_post_id'], 'token': sub['token']
+                                        'vk_id': sub['vk_id'], 'vk_type': sub['vk_type'], 'long_poll': sub['long_poll'], 'last_post_id': sub['last_post_id'], 'token': sub['token'], 'added_by': sub['added_by']
                                     })
                 del srvs, chns, subs
         print()
@@ -99,7 +102,7 @@ class Subscriptions(commands.Cog):
             vkapi = aiovk.API(ses)
 
             try:
-                groupi = await vkapi.groups.getById(group_id=wall_id, fields="status,description,members_count", v='5.130')
+                groupi = await vkapi.groups.getById(group_id=wall_id, fields=self.group_fields, v='5.130')
                 if groupi[0]['is_closed'] == 1 and not 'is_member' in groupi[0]:
                     groupi = [{'deactivated': True}]
             except VkAPIError as exc:
@@ -107,14 +110,14 @@ class Subscriptions(commands.Cog):
                     groupi = [{'deactivated': True}]
             
             try:
-                useri = await vkapi.users.get(user_ids=wall_id, fields='photo_max,status,screen_name,followers_count,counters', v='5.130')
+                useri = await vkapi.users.get(user_ids=wall_id, fields=self.user_fields, v='5.130')
             except VkAPIError as exc:
                 if exc.error_code == 113:
                     useri = [{'deactivated': True}]
 
         if not 'deactivated' in groupi[0] and not 'deactivated' in useri[0]:
-            group_embed = group_compile_embed(groupi[0])
-            user_embed = user_compile_embed(useri[0])
+            group_embed = compile_wall_embed(groupi[0])
+            user_embed = compile_wall_embed(useri[0])
 
             ctx.msg = await ctx.send(content='React with\n\t:one: for **first** wall\n\t:two: for **second** wall,\n\t❌ for cancel.', embeds=[group_embed, user_embed])
             for emoji in ['1️⃣', '2️⃣', '❌']:
@@ -136,10 +139,10 @@ class Subscriptions(commands.Cog):
                     await ctx.msg.edit(content='❌ Cancelled', embed=None)
 
         elif not 'deactivated' in groupi[0]:
-            await self.setup_wall(ctx, 'add', channel, 'g', groupi[0], group_compile_embed(groupi[0]))
+            await self.setup_wall(ctx, 'add', channel, 'g', groupi[0], compile_wall_embed(groupi[0]))
 
         elif not 'deactivated' in useri[0]:
-            await self.setup_wall(ctx, 'add', channel, 'u', useri[0], user_compile_embed(useri[0]))
+            await self.setup_wall(ctx, 'add', channel, 'u', useri[0], compile_wall_embed(useri[0]))
 
         else: raise VkWallBlocked
 
@@ -165,52 +168,57 @@ class Subscriptions(commands.Cog):
         chn = Server.find_by_args(ctx.guild.id).find_channel(channel.id)
         if chn is None:
             raise NoSubs
+        elif len(chn.subscriptions) == 0:
+            raise NoSubs
         subs = chn.subscriptions
 
-        if len(subs) == 0:
-            raise NoSubs
 
         embed = discord.Embed(
             title = f'Wall subscriptions',
-            description = f'**for **{channel.mention}** channel:**',
+            description = f'for {channel.mention} channel:',
             color = sets["embedColor"]
         )
         table = texttable.Texttable(max_width=0)
-        table.set_cols_align(['c','c','c','c'])
-        table.header(['Name', 'Short address', 'Type', 'ID'])
-        table.set_cols_dtype(['t','t','t','i'])
+        table.set_cols_align(['c','c','c','c','c'])
+        table.header(['Name', 'Short address', 'Type', 'ID', 'Added by'])
+        table.set_cols_dtype(['t','t','t','i','t'])
         table.set_chars(['─','│','┼','─'])
 
         groups, users = '', ''
+        added_by_groups, added_by_users = [], []
         for sub in subs:
-            if sub.type == 'g': groups += f"{sub.id},"
-            else: users += f"{sub.id},"
+            if sub.type == 'g':
+                groups += f"{sub.id},"
+                added_by_groups.append(sub.added_by)
+            else:
+                users += f"{sub.id},"
+                added_by_users.append(sub.added_by)
         async with aiovk.TokenSession(vk_token) as ses:
             vkapi = aiovk.API(ses)
             if groups != '':
-                r_groups = await vkapi.groups.getById(group_ids=groups, v='5.130')
+                resp_groups = await vkapi.groups.getById(group_ids=groups, v='5.130')
 
-                for wall in r_groups:
+                for wall, added_by in zip(resp_groups, added_by_groups):
                     name = f"{wall['name']}"
-                    type = 'Group'
+                    added_by = self.client.get_user(added_by)
 
-                    table.add_row([name, wall['screen_name'], type, wall['id']])
+                    table.add_row([name, wall['screen_name'], 'Group', wall['id'], f'{added_by.name}#{added_by.discriminator}'])
                     embed.add_field(
                         name = name,
-                        value = f"Short address: `{wall['screen_name']}`\nType: `{type}`\nID: `{wall['id']}`",
+                        value = f"Short address: `{wall['screen_name']}`\nType: `Group`\nID: `{wall['id']}`\nAdded by: {added_by.mention}",
                         inline = True
                     )
             if users != '':
                 r_users = await vkapi.users.get(user_ids=users, fields='screen_name', v='5.130')
 
-                for wall in r_users:
+                for wall, added_by in zip(r_users, added_by_users):
                     name = f"{wall['first_name']} {wall['last_name']}"
-                    type = 'User'
+                    added_by = self.client.get_user(added_by)
 
-                    table.add_row([name, wall['screen_name'], type, wall['id']])
+                    table.add_row([name, wall['screen_name'], 'User', wall['id'], f'{added_by.name}#{added_by.discriminator}'])
                     embed.add_field(
                         name = name,
-                        value = f"Short address: `{wall['screen_name']}`\nType: `{type}`\nID: `{wall['id']}`",
+                        value = f"Short address: `{wall['screen_name']}`\nType: `User`\nID: `{wall['id']}`\nAdded by: {added_by.mention}",
                         inline = True
                     )
 
@@ -251,12 +259,12 @@ class Subscriptions(commands.Cog):
         async with aiovk.TokenSession(vk_token) as ses:
             vkapi = aiovk.API(ses)
 
-            try: groupi = await vkapi.groups.getById(group_id=wall_id, fields="status,description,members_count", v='5.130')
+            try: groupi = await vkapi.groups.getById(group_id=wall_id, fields=self.group_fields, v='5.130')
             except VkAPIError as exc:
                 if exc.error_code == 100:
                     groupi = [{'deactivated': True}]
 
-            try: useri = await vkapi.users.get(user_ids=wall_id, fields='photo_max,status,screen_name,followers_count,counters', v='5.130')
+            try: useri = await vkapi.users.get(user_ids=wall_id, fields=self.user_fields, v='5.130')
             except VkAPIError as exc:
                 if exc.error_code == 113:
                     useri = [{'deactivated': True}]
@@ -266,8 +274,8 @@ class Subscriptions(commands.Cog):
             if len(subs) == 0: raise NotSub
 
             elif len(subs) == 2:
-                group_embed = group_compile_embed(groupi[0])
-                user_embed = user_compile_embed(useri[0])
+                group_embed = compile_wall_embed(groupi[0])
+                user_embed = compile_wall_embed(useri[0])
 
                 ctx.msg = await ctx.send(content='React with\n\t:one: for **first** wall,\n\t:two: for **second** wall,\n\t❌ for cancel.', embeds=[group_embed, user_embed])
                 for emoji in ['1️⃣', '2️⃣', '❌']:
@@ -292,10 +300,10 @@ class Subscriptions(commands.Cog):
             
             elif len(subs) == 1:
                 if subs[0].type == 'g':
-                    wall_embed = group_compile_embed(groupi[0])
+                    wall_embed = compile_wall_embed(groupi[0])
                     walli = groupi[0]
                 elif subs[0].type == 'u': 
-                    wall_embed = user_compile_embed(useri[0])
+                    wall_embed = compile_wall_embed(useri[0])
                     walli = useri[0]
                 await self.setup_wall(ctx, 'del', channel, subs[0].type, walli, wall_embed)
 
@@ -303,13 +311,13 @@ class Subscriptions(commands.Cog):
             subs = chn.find_subs(groupi[0]['id'])
             if len(subs) == 0: raise NotSub
 
-            await self.setup_wall(ctx, 'del', channel, 'g', groupi[0], group_compile_embed(groupi[0]))
+            await self.setup_wall(ctx, 'del', channel, 'g', groupi[0], compile_wall_embed(groupi[0]))
 
         elif not 'deactivated' in useri[0]:
             subs = chn.find_subs(groupi[0]['id'])
             if len(subs) == 0: raise NotSub
 
-            await self.setup_wall(ctx, 'del', channel, 'u', useri[0], user_compile_embed(useri[0]))
+            await self.setup_wall(ctx, 'del', channel, 'u', useri[0], compile_wall_embed(useri[0]))
 
         else: raise VkWallBlocked
 
@@ -325,7 +333,7 @@ class Subscriptions(commands.Cog):
 
         async with aiovk.TokenSession(vk_token) as ses:
             vkapi = aiovk.API(ses)
-            user_embed = user_compile_embed((await vkapi.users.get(fields='photo_max,status,screen_name,followers_count,counters', v='5.130'))[0])
+            user_embed = compile_wall_embed((await vkapi.users.get(fields=self.user_fields, v='5.130'))[0])
         await ctx.send(f'**{ctx.guild.name}** is linked to this account.\nYou can change it with `/subs link` command.', embed=user_embed)
 
     @cog_ext.cog_subcommand(name='link',
@@ -384,12 +392,11 @@ class Subscriptions(commands.Cog):
                     #             await ctx.send(f'You are the administrator of **{name}**. You can enable \"long-poll\" reposting.\nThis means bla bla bla WIP')
                                 # vkapi.groups.setLongPollSettings(enabled=1, wall_post_new=1, v='5.130')
                                 # long_poll = True
-
                     if _channel is None:
-                        _channel = await Channel.add(Server.find_by_args(ctx.guild.id), channel, {'vk_id': abs(walli['id']), 'vk_type': wall, 'long_poll': long_poll, 'last_post_id': 0, 'token': None})
+                        _channel = await Channel.add(Server.find_by_args(ctx.guild.id), channel, {'vk_id': abs(walli['id']), 'vk_type': wall, 'long_poll': long_poll, 'last_post_id': 0, 'token': None, 'added_by': ctx.author.id})
 
                     elif _channel.find_subs(walli['id'], wall) is None:
-                        _sub = await Subscription.add(_channel, {'vk_id': abs(walli['id']), 'vk_type': wall, 'long_poll': long_poll, 'last_post_id': 0, 'token': None})
+                        _sub = await Subscription.add(_channel, {'vk_id': abs(walli['id']), 'vk_type': wall, 'long_poll': long_poll, 'last_post_id': 0, 'token': None, 'added_by': ctx.author.id})
                         
                     else: raise SubExists
 
@@ -415,9 +422,9 @@ class Subscriptions(commands.Cog):
 
         async with aiovk.TokenSession(server.token) as ses:
             vkapi = aiovk.API(ses)
-            user = (await vkapi.users.get(fields='photo_max,status,screen_name,followers_count,counters', v='5.130'))[0]
+            user = (await vkapi.users.get(fields=self.user_fields, v='5.130'))[0]
         msg = self.client.get_channel(temp_data["chn_id"]).get_partial_message(temp_data['msg_id'])
-        await msg.edit(content=f"**{self.client.get_guild(server.id).name}** is now linked to this account.\nYou can change it with `/subs link` command.", embed=user_compile_embed(user))
+        await msg.edit(content=f"**{self.client.get_guild(server.id).name}** is now linked to this account.\nYou can change it with `/subs link` command.", embed=compile_wall_embed(user))
 
         Server.temp_data.remove(temp_data)
 

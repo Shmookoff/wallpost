@@ -113,6 +113,8 @@ class WallPost(commands.Bot):
 
 
 if __name__ == '__main__':
-    client = WallPost(command_prefix='.', activity=discord.Activity(name='/subs add', type=0))
+    intents = discord.Intents.default()
+    intents.members = True
+    client = WallPost(command_prefix='.', intents=intents, activity=discord.Activity(name='/subs add', type=0))
     client.ipc.start()
     client.run(sets["dcToken"])

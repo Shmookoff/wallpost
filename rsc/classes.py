@@ -39,10 +39,12 @@ class Server:
         for server in cls.all:
             for channel in server.channels:
                 for sub in channel.subscriptions:
+                    channel.subscriptions.remove(sub)
+                    Subscription.all.remove(sub)
                     sub.task.cancel()
-                    del sub
-                del channel
-            del server
+                server.channels.remove(channel)
+                Channel.all.remove(channel)
+            cls.all.remove(server)
 
     @classmethod
     async def add(cls, id):
@@ -66,7 +68,6 @@ class Server:
                 await cur.execute("DELETE FROM server WHERE id = %s", (self.id,))
 
         Server.all.remove(self)
-        del self
 
     async def set_token(self, token):
         self.token = token
@@ -158,9 +159,7 @@ class Channel:
         Channel.all.remove(self)
         self.server.channels.remove(self)
 
-        if is_called is False: print("")
-
-        del self
+        if is_called is False: print()
 
     def find_subs(self, id, wall = None):
         if wall is None:
@@ -205,6 +204,7 @@ class Subscription:
         self.longpoll = info['long_poll']
         self.last_post_id = info['last_post_id']
         self.token = info['token']
+        self.added_by = info['added_by']
 
         self.task = loop.create_task(self.repost_task())
 
@@ -224,7 +224,7 @@ class Subscription:
 
         async with aiopg.connect(sets["psqlUri"]) as conn:
             async with conn.cursor(cursor_factory=DictCursor) as cur:
-                await cur.execute("INSERT INTO subscription (vk_id, vk_type, long_poll, last_post_id, channel_id) VALUES(%s, %s, %s, %s, %s)", (self.id, self.type, self.longpoll, self.last_post_id, self.channel.id))
+                await cur.execute("INSERT INTO subscription (vk_id, vk_type, long_poll, last_post_id, channel_id, added_by) VALUES(%s, %s, %s, %s, %s, %s)", (self.id, self.type, self.longpoll, self.last_post_id, self.channel.id, self.added_by))
 
         if is_called is False:
             print(f'\n{self.server}')
@@ -252,11 +252,7 @@ class Subscription:
         Subscription.all.remove(self)
         self.channel.subscriptions.remove(self)
 
-        loop.create_task(self.delete_task())
-
-    async def delete_task(self):
         self.task.cancel()
-        del self
 
     def __str__(self):
         return f'SUB {self.type.upper()}{self.id} LP {self.longpoll}'
