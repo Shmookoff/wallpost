@@ -27,7 +27,7 @@ class Subscriptions(commands.Cog):
         print(f'Load COG {self.__name__}')
 
         self.user_fields = 'photo_max,status,screen_name,followers_count,verified'
-        self.group_fields = 'photo_200,status,screen_name,members_count,verified,description'
+        self.group_fields = 'photo_200,status,screen_name,members_count,verified'
 
         self.client = client
         self.loop = client.loop

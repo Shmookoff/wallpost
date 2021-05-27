@@ -50,16 +50,6 @@ def compile_wall_embed(wall):
             value = f'`{wall["members_count"]}`',
             inline = True,
         )
-        if wall['description'] != '':
-            if len(wall['description']) <= 512:
-                description = wall["description"]
-            else:
-                description = f'{wall["description"][:512]}...'
-            embed.add_field(
-                name = 'Description',
-                value = description,
-                inline = False
-            )
         embed.set_footer(text='Group Wall', icon_url=vk['photo'])
     else:
         embed.title = f'{wall["first_name"]} {wall["last_name"]}'
