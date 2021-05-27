@@ -115,7 +115,10 @@ class WallPost(commands.Bot):
     @tasks.loop(minutes=15.0)
     async def ping_server(self):
         async with aiohttp.ClientSession() as session:
-            async with session.get('https://wallpostvk.herokuapp.com/') as resp:
+            try:
+                async with session.get(sets['url']) as resp:
+                    pass
+            except:
                 pass
 
 

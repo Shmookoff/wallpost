@@ -102,22 +102,22 @@ class Subscriptions(commands.Cog):
             vkapi = aiovk.API(ses)
 
             try:
-                groupi = await vkapi.groups.getById(group_id=wall_id, fields=self.group_fields, v='5.130')
-                if groupi[0]['is_closed'] == 1 and not 'is_member' in groupi[0]:
-                    groupi = [{'deactivated': True}]
+                group = (await vkapi.groups.getById(group_id=wall_id, fields=self.group_fields, v='5.130'))[0]
+                if group['is_closed'] == 1 and not 'is_member' in group:
+                    group = {'deactivated': True}
             except VkAPIError as exc:
                 if exc.error_code == 100:
-                    groupi = [{'deactivated': True}]
+                    group = {'deactivated': True}
             
             try:
-                useri = await vkapi.users.get(user_ids=wall_id, fields=self.user_fields, v='5.130')
+                user = (await vkapi.users.get(user_ids=wall_id, fields=self.user_fields, v='5.130'))[0]
             except VkAPIError as exc:
                 if exc.error_code == 113:
-                    useri = [{'deactivated': True}]
+                    user = {'deactivated': True}
 
-        if not 'deactivated' in groupi[0] and not 'deactivated' in useri[0]:
-            group_embed = compile_wall_embed(groupi[0])
-            user_embed = compile_wall_embed(useri[0])
+        if (not 'deactivated' in group) and (not 'deactivated' in user):
+            group_embed = compile_wall_embed(group)
+            user_embed = compile_wall_embed(user)
 
             ctx.msg = await ctx.send(content='React with\n\t:one: for **first** wall\n\t:two: for **second** wall,\n\t❌ for cancel.', embeds=[group_embed, user_embed])
             for emoji in ['1️⃣', '2️⃣', '❌']:
@@ -132,17 +132,17 @@ class Subscriptions(commands.Cog):
                 await ctx.msg.clear_reactions()
 
                 if r.emoji == '1️⃣':
-                    await self.setup_wall(ctx, 'add', channel, 'g', groupi[0], group_embed)
+                    await self.setup_wall(ctx, group, group_embed)
                 elif r.emoji == '2️⃣':
-                    await self.setup_wall(ctx, 'add', channel, 'u', useri[0], user_embed)
+                    await self.setup_wall(ctx, user, user_embed)
                 else:
                     await ctx.msg.edit(content='❌ Cancelled', embed=None)
 
-        elif not 'deactivated' in groupi[0]:
-            await self.setup_wall(ctx, 'add', channel, 'g', groupi[0], compile_wall_embed(groupi[0]))
+        elif not 'deactivated' in group:
+            await self.setup_wall(ctx, group, compile_wall_embed(group))
 
-        elif not 'deactivated' in useri[0]:
-            await self.setup_wall(ctx, 'add', channel, 'u', useri[0], compile_wall_embed(useri[0]))
+        elif not 'deactivated' in user:
+            await self.setup_wall(ctx, user, compile_wall_embed(user))
 
         else: raise VkWallBlocked
 
@@ -259,23 +259,25 @@ class Subscriptions(commands.Cog):
         async with aiovk.TokenSession(vk_token) as ses:
             vkapi = aiovk.API(ses)
 
-            try: groupi = await vkapi.groups.getById(group_id=wall_id, fields=self.group_fields, v='5.130')
+            try:
+                group = (await vkapi.groups.getById(group_id=wall_id, fields=self.group_fields, v='5.130'))[0]
             except VkAPIError as exc:
                 if exc.error_code == 100:
-                    groupi = [{'deactivated': True}]
+                    group = {'deactivated': True}
 
-            try: useri = await vkapi.users.get(user_ids=wall_id, fields=self.user_fields, v='5.130')
+            try:
+                user = (await vkapi.users.get(user_ids=wall_id, fields=self.user_fields, v='5.130'))[0]
             except VkAPIError as exc:
                 if exc.error_code == 113:
-                    useri = [{'deactivated': True}]
+                    user = {'deactivated': True}
 
-        if not 'deactivated' in groupi[0] and not 'deactivated' in useri[0]:
-            subs = chn.find_subs(groupi[0]['id'])
+        if (not 'deactivated' in group) and (not 'deactivated' in user):
+            subs = chn.find_subs(group['id'])
             if len(subs) == 0: raise NotSub
 
             elif len(subs) == 2:
-                group_embed = compile_wall_embed(groupi[0])
-                user_embed = compile_wall_embed(useri[0])
+                group_embed = compile_wall_embed(group)
+                user_embed = compile_wall_embed(user)
 
                 ctx.msg = await ctx.send(content='React with\n\t:one: for **first** wall,\n\t:two: for **second** wall,\n\t❌ for cancel.', embeds=[group_embed, user_embed])
                 for emoji in ['1️⃣', '2️⃣', '❌']:
@@ -290,34 +292,32 @@ class Subscriptions(commands.Cog):
                     await ctx.msg.clear_reactions()
 
                     if r.emoji == '1️⃣':
-                        await self.setup_wall(ctx, 'del', channel, 'g', groupi[0], group_embed)
+                        await self.setup_wall(ctx, group, group_embed)
 
                     elif r.emoji == '2️⃣':
-                        await self.setup_wall(ctx, 'del', channel, 'u', useri[0], user_embed)
+                        await self.setup_wall(ctx, user, user_embed)
 
                     else:
                         await ctx.msg.edit(content='❌ Cancelled', embed=None)
             
             elif len(subs) == 1:
                 if subs[0].type == 'g':
-                    wall_embed = compile_wall_embed(groupi[0])
-                    walli = groupi[0]
+                    await self.setup_wall(ctx, group, compile_wall_embed(group))
                 elif subs[0].type == 'u': 
-                    wall_embed = compile_wall_embed(useri[0])
-                    walli = useri[0]
-                await self.setup_wall(ctx, 'del', channel, subs[0].type, walli, wall_embed)
+                    await self.setup_wall(ctx, user, compile_wall_embed(user))
 
-        elif not 'deactivated' in groupi[0]:
-            subs = chn.find_subs(groupi[0]['id'])
+        elif not 'deactivated' in group:
+            subs = chn.find_subs(group['id'])
+            if len(subs) == 0:
+                raise NotSub
+
+            await self.setup_wall(ctx, group, compile_wall_embed(group))
+
+        elif not 'deactivated' in user:
+            subs = chn.find_subs(group['id'])
             if len(subs) == 0: raise NotSub
 
-            await self.setup_wall(ctx, 'del', channel, 'g', groupi[0], compile_wall_embed(groupi[0]))
-
-        elif not 'deactivated' in useri[0]:
-            subs = chn.find_subs(groupi[0]['id'])
-            if len(subs) == 0: raise NotSub
-
-            await self.setup_wall(ctx, 'del', channel, 'u', useri[0], compile_wall_embed(useri[0]))
+            await self.setup_wall(ctx, user, compile_wall_embed(user))
 
         else: raise VkWallBlocked
 
@@ -356,7 +356,7 @@ class Subscriptions(commands.Cog):
         await ctx.author.send(embed=embed)
 
 
-    async def setup_wall(self, ctx, action, channel, wall, walli, embed):
+    async def setup_wall(self, ctx, wall, embed):
         if hasattr(ctx, 'msg'):
             await ctx.msg.edit(content='Is this the wall you requested?\nReact with ✅ or ❌', embed=embed)
         else:
@@ -366,7 +366,7 @@ class Subscriptions(commands.Cog):
             await ctx.msg.add_reaction(emoji)
 
         try:
-            r, u = await ctx.bot.wait_for('reaction_add', check=lambda r, u: u == ctx.author and r.message.id == ctx.msg.id and r.emoji in ['✅', '❌'], timeout=120.0)
+            r, u = await self.client.wait_for('reaction_add', check=lambda r, u: u == ctx.author and r.message.id == ctx.msg.id and r.emoji in ['✅', '❌'], timeout=120.0)
         except asyncio.TimeoutError:
             await ctx.msg.clear_reactions()
             await ctx.msg.edit(content='❌ Cancelled (timeout)', embed=None)
@@ -374,38 +374,41 @@ class Subscriptions(commands.Cog):
             await ctx.msg.clear_reactions()
 
             if r.emoji == '✅':
-                if wall == "g":
-                    name = walli['name']
-                    if not walli['is_closed'] == 0 and walli['is_member'] == 0:
+                if 'name' in wall:
+                    if not wall['is_closed'] == 0 and wall['is_member'] == 0:
                         raise WallClosed
-                elif wall == "u":
-                    name = f'{walli["first_name"]} {walli["last_name"]}'
-                    if walli['can_access_closed'] == False:
+                    name = wall['name']
+                    wall_type = 'g'
+                else:
+                    if wall['can_access_closed'] == False:
                         raise WallClosed
+                    name = f'{wall["first_name"]} {wall["last_name"]}'
+                    wall_type = 'u'
                 
-                if action == 'add':
-                    _channel = Server.find_by_args(ctx.guild.id).find_channel(channel.id)
+                if ctx.subcommand_name == 'add':
+                    _channel = Server.find_by_args(ctx.guild.id).find_channel(ctx.webhook_channel.id)
                     long_poll = False
                     # if wall == 'g':
-                    #     if walli['is_admin'] == 1:
-                    #         if walli['admin_level'] == 3:
+                    #     if wall['is_admin'] == 1:
+                    #         if wall['admin_level'] == 3:
                     #             await ctx.send(f'You are the administrator of **{name}**. You can enable \"long-poll\" reposting.\nThis means bla bla bla WIP')
                                 # vkapi.groups.setLongPollSettings(enabled=1, wall_post_new=1, v='5.130')
                                 # long_poll = True
                     if _channel is None:
-                        _channel = await Channel.add(Server.find_by_args(ctx.guild.id), channel, {'vk_id': abs(walli['id']), 'vk_type': wall, 'long_poll': long_poll, 'last_post_id': 0, 'token': None, 'added_by': ctx.author.id})
-
-                    elif _channel.find_subs(walli['id'], wall) is None:
-                        _sub = await Subscription.add(_channel, {'vk_id': abs(walli['id']), 'vk_type': wall, 'long_poll': long_poll, 'last_post_id': 0, 'token': None, 'added_by': ctx.author.id})
+                        _channel = await Channel.add(Server.find_by_args(ctx.guild.id), ctx.webhook_channel, {
+                            'vk_id': wall['id'], 'vk_type': wall_type, 'long_poll': long_poll, 'last_post_id': 0, 'token': None, 'added_by': ctx.author.id})
+                    elif _channel.find_subs(wall['id'], wall_type) is None:
+                        _sub = await Subscription.add(_channel, {
+                            'vk_id': wall['id'], 'vk_type': wall_type, 'long_poll': long_poll, 'last_post_id': 0, 'token': None, 'added_by': ctx.author.id})
                         
                     else: raise SubExists
 
-                    await ctx.msg.edit(content=f'✅ Successfully subscribed {channel.mention} to **{name}** wall!', embed=None)
+                    await ctx.msg.edit(content=f'✅ Successfully subscribed {ctx.webhook_channel.mention} to **{name}** wall!', embed=None)
 
-                if action == 'del':
-                    await Server.find_by_args(ctx.guild.id).find_channel(channel.id).find_subs(walli['id'], wall).delete()
+                if ctx.subcommand_name == 'del':
+                    await Server.find_by_args(ctx.guild.id).find_channel(ctx.webhook_channel.id).find_subs(wall['id'], wall_type).delete()
 
-                    await ctx.msg.edit(content=f'✅ Successfully unsubscrubed {channel.mention} from **{name}** wall!', embed=None)
+                    await ctx.msg.edit(content=f'✅ Successfully unsubscrubed {ctx.webhook_channel.mention} from **{name}** wall!', embed=None)
 
             elif r.emoji == '❌':
                 await ctx.msg.edit(content='❌ Cancelled', embed=None)
