@@ -115,8 +115,11 @@ class WallPost(commands.Bot):
     @tasks.loop(minutes=15)
     async def ping_server(self):
         async with aiohttp.ClientSession() as session:
-            try: session.get(sets['url'])
-            except Exception: pass
+            try:
+                async with session.get(sets['url']) as resp:
+                    print(await resp.text())
+            except Exception as exc:
+                print(exc)
 
 
 if __name__ == '__main__':
