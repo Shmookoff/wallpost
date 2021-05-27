@@ -1,9 +1,10 @@
 import discord
-from discord.ext import commands, ipc
+from discord.ext import commands, tasks, ipc
 from discord_slash import SlashCommand
 
 import aiopg
 from psycopg2.extras import DictCursor
+import aiohttp
 
 import os
 import traceback
@@ -110,6 +111,12 @@ class WallPost(commands.Bot):
                 await self.log_chn.send(msg, file=discord.File(StringIO(tb), filename='traceback.python'))
         except Exception as exc:
             print(f'An exception has occured while handilng {raised} error:\n{traceback.format_exc()}', end='\n\n')
+
+    @tasks.Loop(minutes=15)
+    async def ping_server(self):
+        async with aiohttp.ClientSession() as session:
+            try: session.get(sets['url'])
+            except Exception: pass
 
 
 if __name__ == '__main__':
