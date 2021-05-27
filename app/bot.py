@@ -59,6 +59,7 @@ class WallPost(commands.Bot):
 
         self.log_chn = client.get_channel(sets["logChnId"])
         self.slash = SlashCommand(self, sync_commands=True, sync_on_cog_reload=True)
+        self.ping_server.start()
 
         try: self.load_extension('app.cogs.handler')
         except commands.ExtensionAlreadyLoaded:
@@ -71,7 +72,6 @@ class WallPost(commands.Bot):
         print()
 
         print(f'/CMNDS: {list(self.slash.commands.keys())}', end='\n\n')
-
         print(f'Done INIT {self.__name__}', end='\n\n')
 
     async def on_ipc_ready(self):
@@ -112,14 +112,11 @@ class WallPost(commands.Bot):
         except Exception as exc:
             print(f'An exception has occured while handilng {raised} error:\n{traceback.format_exc()}', end='\n\n')
 
-    @tasks.loop(minutes=15)
+    @tasks.loop(minutes=15.0)
     async def ping_server(self):
         async with aiohttp.ClientSession() as session:
-            try:
-                async with session.get(sets['url']) as resp:
-                    print(await resp.text())
-            except Exception as exc:
-                print(exc)
+            async with session.get('https://wallpostvk.herokuapp.com/') as resp:
+                pass
 
 
 if __name__ == '__main__':
