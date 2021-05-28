@@ -42,9 +42,3 @@ vk_sets = {
     "secureKey": os.environ.get("VK_SECURE_KEY"),
     "serviceKey": os.environ.get("VK_SERVICE_KEY"),
 }
-
-# db = create_async_engine(sets['psqlUri'])
-# meta = MetaData(db)
-# srv = Table('server', meta, autoload=True)
-# chn = Table('channel', meta, autoload=True)
-# sub = Table('subscription', meta, autoload=True)
