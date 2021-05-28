@@ -113,7 +113,7 @@ class Channel:
 
     @property
     def webhook_id(self):
-        return webhook_url.split('/')[5]
+        return self.webhook_url.split('/')[5]
 
     @classmethod
     def init(cls, server, id, webhook_url):
