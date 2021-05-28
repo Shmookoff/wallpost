@@ -53,11 +53,11 @@ class Server:
             async with conn.cursor(cursor_factory=DictCursor) as cur:
                 await cur.execute("INSERT INTO server (id) VALUES(%s)", (self.id,))
 
-        print(f'\nAdd {self}\n')
+        print(f'Add {self}', end='\n\n')
         return self
 
     async def delete(self):
-        print(f'\nDel {self}')
+        print(f'Del {self}')
 
         for channel in self.channels:
             await channel.delete()
@@ -105,12 +105,15 @@ class Channel:
 
         self.id = id
         self.webhook_url = webhook_url
-        self.webhook_id = webhook_url.split('/')[5]
 
         self.subscriptions = []
         server.channels.append(self)
 
         Channel.all.append(self)
+
+    @property
+    def webhook_id(self):
+        return webhook_url.split('/')[5]
 
     @classmethod
     def init(cls, server, id, webhook_url):
@@ -127,19 +130,17 @@ class Channel:
             async with conn.cursor(cursor_factory=DictCursor) as cur:
                 await cur.execute("INSERT INTO channel (id, webhook_url, server_id) VALUES(%s, %s, %s)", (self.id, self.webhook_url, self.server.id))
 
-        print(f'\n{self.server}')
+        print(f'{self.server}')
         print(f'\tAdd {self}')
         if not (info is None):
-            try:
-                sub = await Subscription.add(self, info, True)
-            except Exception as exc: print(exc)
+            sub = await Subscription.add(self, info, True)
         else: print("")
 
         return self
 
     async def delete(self, is_called=False):
         if is_called is False:
-            print(f'\n{self.server}')
+            print(f'{self.server}')
         print(f'\tDel {self}')
 
         for sub in self.subscriptions:
@@ -161,12 +162,12 @@ class Channel:
 
         if is_called is False: print()
 
-    def find_subs(self, id, wall = None):
-        if wall is None:
+    def find_subs(self, wall_id, wall_type=None):
+        if wall_type is None:
             subs = []
             i = 0
             for sub in self.subscriptions:
-                if sub.id == abs(id):
+                if sub.wall_id == abs(wall_id):
                     subs.append(sub)
                     i += 1
                 if i == 2:
@@ -174,7 +175,7 @@ class Channel:
             return subs
         else:
             for sub in self.subscriptions:
-                if (sub.id, sub.type) == (abs(id), wall):
+                if (sub.wall_id, sub.wall_type) == (abs(wall_id), wall_type):
                     return sub
         return None
 
@@ -196,21 +197,24 @@ class Subscription:
     all = []
 
     def __init__(self, channel, info):
-        self.server = channel.server
         self.channel = channel
 
-        self.id = info['vk_id']
-        self.type = info['vk_type']
-        self.longpoll = info['long_poll']
-        self.last_post_id = info['last_post_id']
-        self.token = info['token']
+        self.wall_id = info['wall_id']
+        self.wall_type = info['wall_type']
         self.added_by = info['added_by']
+        if info['last_id'] is not None:
+            self.last_id = info['last_id']
+        else:
+            self.token = info['token']
 
         self.task = loop.create_task(self.repost_task())
 
         channel.subscriptions.append(self)
-
         Subscription.all.append(self)
+
+    @property
+    def longpoll(self):
+        return False if hasattr(self, "last_id") else True
 
     @classmethod
     def init(cls, channel, info):
@@ -224,12 +228,12 @@ class Subscription:
 
         async with aiopg.connect(sets["psqlUri"]) as conn:
             async with conn.cursor(cursor_factory=DictCursor) as cur:
-                await cur.execute("INSERT INTO subscription (vk_id, vk_type, long_poll, last_post_id, channel_id, added_by) VALUES(%s, %s, %s, %s, %s, %s)", (self.id, self.type, self.longpoll, self.last_post_id, self.channel.id, self.added_by))
+                await cur.execute("INSERT INTO subscription (wall_id, wall_type, last_id, added_by, channel_id) VALUES(%s, %s, %s, %s, %s)", (self.wall_id, self.wall_type, self.last_id, self.added_by, self.channel.id))
 
         if is_called is False:
-            print(f'\n{self.server}')
+            print(f'{self.channel.server}')
             print(f'\t{self.channel}')
-        print(f'\t\tAdd {self}\n')
+        print(f'\t\tAdd {self}', end ='\n\n')
 
         return self
 
@@ -239,13 +243,13 @@ class Subscription:
                 await self.channel.delete()
                 return
             else:
-                print(f'\n{self.server}')
+                print(f'{self.channel.server}')
                 print(f'\t{self.channel}')
-                print(f'\t\tDel {self}\n')
+                print(f'\t\tDel {self}', end='\n\n')
 
                 async with aiopg.connect(sets["psqlUri"]) as conn:
                     async with conn.cursor(cursor_factory=DictCursor) as cur:
-                        await cur.execute("DELETE FROM subscription WHERE channel_id = %s AND vk_id = %s AND vk_type = %s", (self.channel.id, self.id, self.type))
+                        await cur.execute("DELETE FROM subscription WHERE channel_id = %s AND wall_id = %s AND wall_type = %s", (self.channel.id, self.wall_id, self.wall_type))
         else:
             print(f'\t\tDel {self}')
 
@@ -255,23 +259,23 @@ class Subscription:
         self.task.cancel()
 
     def __str__(self):
-        return f'SUB {self.type.upper()}{self.id} LP {self.longpoll}'
+        return f'SUB {self.wall_type.upper()}{self.wall_id} LP {self.longpoll}'
 
     async def repost_task(self):
-        if self.longpoll is False:
-            vk_id = self.id if (self.type == 'u') else -self.id
+        if hasattr(self, 'last_id'):
+            wall_id = self.wall_id if (self.wall_type == 'u') else -self.wall_id
             while True:
-                async with aiovk.TokenSession(self.server.token) as ses:
+                async with aiovk.TokenSession(self.channel.server.token) as ses:
                     vkapi = aiovk.API(ses)
-                    wall = await vkapi.wall.get(owner_id=vk_id, extended=1, count=1, fields='photo_max', v='5.130')
+                    wall = await vkapi.wall.get(owner_id=wall_id, extended=1, count=1, fields='photo_max', v='5.130')
                 if len(wall['items']) > 0:
                     if 'is_pinned' in wall['items'][0]:
                         if wall['items'][0]['is_pinned'] == 1:
-                            async with aiovk.TokenSession(self.server.token) as ses:
+                            async with aiovk.TokenSession(self.channel.server.token) as ses:
                                 vkapi = aiovk.API(ses)
-                                wall = await vkapi.wall.get(owner_id=vk_id, extended=1, offset=1, count=1, fields='photo_max', v='5.130')
+                                wall = await vkapi.wall.get(owner_id=wall_id, extended=1, offset=1, count=1, fields='photo_max', v='5.130')
                     if len(wall['items']) > 0:
-                        if self.last_post_id != wall['items'][0]['id']:
+                        if self.last_id != wall['items'][0]['id']:
                             post_embed = compile_post_embed(wall)
                             async with ClientSession() as session:
                                 try: await discord.Webhook.from_url(url=self.channel.webhook_url, adapter=discord.AsyncWebhookAdapter(session)).send(embed=post_embed)
@@ -280,23 +284,22 @@ class Subscription:
                                         loop.create_task(self.channel.delete())
                                     else: print(exc)
                                 else:
+                                    self.last_id = wall['items'][0]['id']
                                     async with aiopg.connect(sets["psqlUri"]) as conn:
                                         async with conn.cursor(cursor_factory=DictCursor) as cur:
-                                            await cur.execute("UPDATE subscription SET last_post_id = %s WHERE channel_id = %s AND vk_id = @ %s AND vk_type = %s", (wall["items"][0]["id"], self.channel.id, self.id, self.type))
+                                            await cur.execute("UPDATE subscription SET last_id = %s WHERE channel_id = %s AND wall_id = %s AND wall_type = %s",
+                                                (self.last_id, self.channel.id, self.wall_id, self.wall_type))
 
-                                    self.last_post_id = wall['items'][0]['id']
-
-                                    print(f'Repost POST {wall["items"][0]["id"]} from {self} to {self.channel} on {self.server}')
+                                    print(f'Repost POST {self.last_id} from {self} to {self.channel} on {self.channel.server}')
                 await asyncio.sleep(60)
-
-        if self.longpoll is True:
+        else:
             async with aiovk.TokenSession(self.token) as ses:
-                long_poll = BotsLongPoll(ses, group_id=self.id)
+                long_poll = BotsLongPoll(ses, group_id=self.wall_id)
                 async for event in long_poll.iter():
                     if event['type'] == 'wall_post_new':
                         async with aiovk.TokenSession(self.token) as ses:
                             vkapi = aiovk.API(ses)
-                            post_embed = compile_post_embed(event['object'], await vkapi.groups.getById(group_id=self.id, fields='photo_max'))
+                            post_embed = compile_post_embed(event['object'], await vkapi.groups.getById(group_id=self.wall_id, fields='photo_max'))
 
                         async with ClientSession() as session:
                             try: await discord.Webhook.from_url(url=self.channel.webhook_url, adapter=discord.AsyncWebhookAdapter(session)).send(embed=post_embed)
@@ -305,4 +308,4 @@ class Subscription:
                                     self.loop.create_task(self.channel.delete())
                                 else: print(exc)
                             else:
-                                print(f'Repost POST {wall["items"][0]["id"]} from {self} to {self.channel} on {self.server}')
+                                print(f'Repost POST {wall["items"][0]["id"]} from {self} to {self.channel} on {self.channel.server}')

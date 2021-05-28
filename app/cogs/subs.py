@@ -45,7 +45,7 @@ class Subscriptions(commands.Cog):
                 srvs = await cur.fetchall()
                 await cur.execute("SELECT id, webhook_url, server_id FROM channel")
                 chns = await cur.fetchall()
-                await cur.execute("SELECT vk_id, vk_type, long_poll, last_post_id, token, channel_id, added_by FROM subscription")
+                await cur.execute("SELECT wall_id, wall_type, last_id, token, added_by, channel_id FROM subscription")
                 subs = await cur.fetchall()
 
                 for srv in srvs:
@@ -58,7 +58,7 @@ class Subscriptions(commands.Cog):
                             for sub in subs:
                                 if sub['channel_id'] == _chn.id:
                                     _sub = Subscription.init(_chn, {
-                                        'vk_id': sub['vk_id'], 'vk_type': sub['vk_type'], 'long_poll': sub['long_poll'], 'last_post_id': sub['last_post_id'], 'token': sub['token'], 'added_by': sub['added_by']
+                                        'wall_id': sub['wall_id'], 'wall_type': sub['wall_type'], 'last_id': sub['last_id'], 'token': sub['token'], 'added_by': sub['added_by']
                                     })
                 del srvs, chns, subs
         print()
@@ -187,11 +187,11 @@ class Subscriptions(commands.Cog):
         groups, users = '', ''
         added_by_groups, added_by_users = [], []
         for sub in subs:
-            if sub.type == 'g':
-                groups += f"{sub.id},"
+            if sub.wall_type == 'g':
+                groups += f"{sub.wall_id},"
                 added_by_groups.append(sub.added_by)
             else:
-                users += f"{sub.id},"
+                users += f"{sub.wall_id},"
                 added_by_users.append(sub.added_by)
         async with aiovk.TokenSession(vk_token) as ses:
             vkapi = aiovk.API(ses)
@@ -301,9 +301,9 @@ class Subscriptions(commands.Cog):
                         await ctx.msg.edit(content='❌ Cancelled', embed=None)
             
             elif len(subs) == 1:
-                if subs[0].type == 'g':
+                if subs[0].wall_type == 'g':
                     await self.setup_wall(ctx, group, compile_wall_embed(group))
-                elif subs[0].type == 'u': 
+                elif subs[0].wall_type == 'u': 
                     await self.setup_wall(ctx, user, compile_wall_embed(user))
 
         elif not 'deactivated' in group:
@@ -396,10 +396,10 @@ class Subscriptions(commands.Cog):
                                 # long_poll = True
                     if _channel is None:
                         _channel = await Channel.add(Server.find_by_args(ctx.guild.id), ctx.webhook_channel, {
-                            'vk_id': wall['id'], 'vk_type': wall_type, 'long_poll': long_poll, 'last_post_id': 0, 'token': None, 'added_by': ctx.author.id})
+                            'wall_id': wall['id'], 'wall_type': wall_type, 'last_id': 0, 'token': None, 'added_by': ctx.author.id})
                     elif _channel.find_subs(wall['id'], wall_type) is None:
                         _sub = await Subscription.add(_channel, {
-                            'vk_id': wall['id'], 'vk_type': wall_type, 'long_poll': long_poll, 'last_post_id': 0, 'token': None, 'added_by': ctx.author.id})
+                            'wall_id': wall['id'], 'wall_type': wall_type, 'last_id': 0, 'token': None, 'added_by': ctx.author.id})
                         
                     else: raise SubExists
 
