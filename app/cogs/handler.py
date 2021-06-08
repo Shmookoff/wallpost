@@ -17,14 +17,20 @@ class ExceptionHandler(commands.Cog):
     __name__ = 'Exception Handler'
 
     def __init__(self, client):
-        print(f'Load COG {self.__name__}')
+        msg = f'Load COG {self.__name__}'
+        if hasattr(client, 'cogs_msg'):
+            client.cogs_msg += f'\n\t{msg}'
+        else:
+            client.logger.info(msg)
 
         self.client = client
 
-        print(f'\tSet LOG_CHN {self.client.log_chn.name} at {self.client.log_chn.guild.name}')
-
     def cog_unload(self):
-        print(f'Unload COG {self.__name__}')
+        msg = f'Unload COG {self.__name__}'
+        if hasattr(client, 'cogs_msg'):
+            client.cogs_msg += f'\n\t{msg}'
+        else:
+            client.logger.info(msg)
 
 
     @commands.Cog.listener()

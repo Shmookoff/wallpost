@@ -1,6 +1,9 @@
 import os
+import json
 import asyncio
 
+
+envar = json.loads(os.environ.get("WALLPOST"))
 
 sets = {
     "embedTitle": "Open post",
@@ -11,16 +14,22 @@ sets = {
 
     "srvcSrv": 817700627605749781,
 
-    "ipcSecretKey": os.environ.get("IPC_SECRET"),
-    "dcToken": os.environ.get("DC_SECRET"),
-    "psqlUri": os.environ.get("DATABASE_URL"),
+    "ipcSecretKey": envar["ipc"],
+    "dcToken": envar["dc"],
 }
 
+vk_sets = {
+    "appId": 7797033,
+    "redirectUri": f"{sets['url']}/oauth2/redirect",
+    "secureKey": envar["vk"]["secure"],
+    "serviceKey": envar["vk"]["service"],
+}
 
-branch = os.environ.get("HEROKU")
+branch = envar.get("branch", None)
 if branch == "MAIN":
     sets["url"] = "https://wallpostvk.herokuapp.com"
     
+    sets["psqlUri"] = os.environ.get("DATABASE_URL")
     sets["srvcChnId"] = 823545137082531861
     sets['logChnId'] = 836705410630287451
     sets["version"] = 'MAIN'
@@ -31,14 +40,7 @@ else:
         sets["url"] = "http://localhost:5000"
         asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
     
+    sets["psqlUri"] = envar["db"]
     sets["srvcChnId"] = 843838814153343027
     sets['logChnId'] = 843838843262337024
     sets["version"] = 'DEV'
-
-
-vk_sets = {
-    "appId": 7797033,
-    "redirectUri": f"{sets['url']}/oauth2/redirect",
-    "secureKey": os.environ.get("VK_SECURE_KEY"),
-    "serviceKey": os.environ.get("VK_SERVICE_KEY"),
-}

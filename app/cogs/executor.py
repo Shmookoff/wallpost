@@ -14,12 +14,20 @@ class Executor(commands.Cog):
     __name__ = 'Executor'
     
     def __init__(self, client):
-        print(f'Load COG {self.__name__}')
+        msg = f'Load COG {self.__name__}'
+        if hasattr(client, 'cogs_msg'):
+            client.cogs_msg += f'\n\t{msg}'
+        else:
+            client.logger.info(msg)
 
         self.client = client
 
     def cog_unload(self):
-        print(f'Unload COG {self.__name__}')
+        msg = f'Unload COG {self.__name__}'
+        if hasattr(client, 'cogs_msg'):
+            client.cogs_msg += f'\n\t{msg}'
+        else:
+            client.logger.info(msg)
 
 
     @commands.command(aliases=['e'])

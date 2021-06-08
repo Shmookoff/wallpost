@@ -9,6 +9,8 @@ from aiohttp import ClientSession
 
 from psycopg2.extras import DictCursor
 
+import traceback
+
 from rsc.config import sets
 from rsc.functions import compile_post_embed
 
@@ -31,8 +33,8 @@ class Server:
     @classmethod
     def init(cls, id, lang, token):
         self = cls(id, lang, token)
-        print(f'Init {self}')
-        return self
+        msg = f'Init {self}'
+        return self, msg
 
     @classmethod
     def uninit_all(cls):
@@ -53,21 +55,24 @@ class Server:
             async with conn.cursor(cursor_factory=DictCursor) as cur:
                 await cur.execute("INSERT INTO server (id) VALUES(%s)", (self.id,))
 
-        print(f'Add {self}', end='\n\n')
+        msg = f'Add {self}'
+        Server.client.logger.info('Add {{aa}}SRV{{aa}} {{tttpy}}\n{msg} {{ttt}}'.format(msg=msg))
         return self
 
     async def delete(self):
-        print(f'Del {self}')
+        msg = f'Del {self}'
 
         for channel in self.channels:
-            await channel.delete()
-        print("")
+            _msg = await channel.delete()
+            msg += f'\n{_msg}'
 
         async with aiopg.connect(sets["psqlUri"]) as conn:
             async with conn.cursor(cursor_factory=DictCursor) as cur:
                 await cur.execute("DELETE FROM server WHERE id = %s", (self.id,))
 
         Server.all.remove(self)
+
+        Server.client.logger.info('Del {{aa}}SRV{{aa}} {{tttpy}}\n{msg} {{ttt}}'.format(msg=msg))
 
     async def set_token(self, token):
         self.token = token
@@ -118,8 +123,8 @@ class Channel:
     @classmethod
     def init(cls, server, id, webhook_url):
         self = cls(server, id, webhook_url)
-        print(f'\tInit {self}')
-        return self
+        msg = f'\tInit {self}'
+        return self, msg
 
     @classmethod
     async def add(cls, server, discord_channel, info=None):
@@ -130,28 +135,29 @@ class Channel:
             async with conn.cursor(cursor_factory=DictCursor) as cur:
                 await cur.execute("INSERT INTO channel (id, webhook_url, server_id) VALUES(%s, %s, %s)", (self.id, self.webhook_url, self.server.id))
 
-        print(f'{self.server}')
-        print(f'\tAdd {self}')
+        msg = f'{self.server}\n\tAdd {self}'
         if not (info is None):
-            sub = await Subscription.add(self, info, True)
-        else: print("")
+            _, _msg = await Subscription.add(self, info, True)
+            msg += f'\n{_msg}'
 
+        Server.client.logger.info('Add {{aa}}CHN{{aa}} {{tttpy}}\n{msg} {{ttt}}'.format(msg=msg))
         return self
 
     async def delete(self, is_called=False):
+        msg = str()
         if is_called is False:
-            print(f'{self.server}')
-        print(f'\tDel {self}')
+            msg += f'{self.server}\n'
+        msg += f'\tDel {self}'
 
         for sub in self.subscriptions:
-            await sub.delete(is_called=True)
+            _msg = await sub.delete(is_called=True)
+            msg += f'\n\t\t{_msg}'
 
         if is_called is False:
             async with ClientSession() as session:
                 try: await discord.Webhook.from_url(url=self.webhook_url, adapter=discord.AsyncWebhookAdapter(session)).delete()
                 except NotFound as exc:
-                    if exc.code == 10015: pass
-                    else: print(exc)
+                    pass
 
             async with aiopg.connect(sets["psqlUri"]) as conn:
                 async with conn.cursor(cursor_factory=DictCursor) as cur:
@@ -160,7 +166,10 @@ class Channel:
         Channel.all.remove(self)
         self.server.channels.remove(self)
 
-        if is_called is False: print()
+        if is_called is False:
+            Server.client.logger.info('Del {{aa}}CHN{{aa}} {{tttpy}}\n{msg} {{ttt}}'.format(msg=msg))
+        else:
+            return msg
 
     def find_subs(self, wall_id, wall_type=None):
         if wall_type is None:
@@ -219,47 +228,54 @@ class Subscription:
     @classmethod
     def init(cls, channel, info):
         self = cls(channel, info)
-        print(f'\t\tInit {self}')
-        return self
+        msg = f'\t\tInit {self}'
+        return self, msg
 
     @classmethod
     async def add(cls, channel, info, is_called=False):
         self = cls(channel, info)
+        msg = str()
 
         async with aiopg.connect(sets["psqlUri"]) as conn:
             async with conn.cursor(cursor_factory=DictCursor) as cur:
                 await cur.execute("INSERT INTO subscription (wall_id, wall_type, last_id, added_by, channel_id) VALUES(%s, %s, %s, %s, %s)", (self.wall_id, self.wall_type, self.last_id, self.added_by, self.channel.id))
 
         if is_called is False:
-            print(f'{self.channel.server}')
-            print(f'\t{self.channel}')
-        print(f'\t\tAdd {self}', end ='\n\n')
+            msg += f'{self.channel.server}\n\t{self.channel}\n'
+        msg += f'\t\tAdd {self}'
 
+        if is_called is True:
+            return self, msg
+
+        Server.client.logger.info('Add {{aa}}SUB{{aa}} {{tttpy}}\n{msg} {{ttt}}'.format(msg=msg))
         return self
 
     async def delete(self, is_called=False):
+        msg = str()
         if is_called is False:
             if len(self.channel.subscriptions) == 1:
                 await self.channel.delete()
                 return
             else:
-                print(f'{self.channel.server}')
-                print(f'\t{self.channel}')
-                print(f'\t\tDel {self}', end='\n\n')
+                msg += f'{self.channel.server}\n\t{self.channel}\n\t\tDel {self}'
 
                 async with aiopg.connect(sets["psqlUri"]) as conn:
                     async with conn.cursor(cursor_factory=DictCursor) as cur:
                         await cur.execute("DELETE FROM subscription WHERE channel_id = %s AND wall_id = %s AND wall_type = %s", (self.channel.id, self.wall_id, self.wall_type))
         else:
-            print(f'\t\tDel {self}')
+            msg += f'Del {self}'
 
         Subscription.all.remove(self)
         self.channel.subscriptions.remove(self)
 
         self.task.cancel()
+        if is_called is False:
+            Server.client.logger.info('Del {{aa}}SUB{{aa}} {{tttpy}}\n{msg} {{ttt}}'.format(msg=msg))
+        else:
+            return msg
 
     def __str__(self):
-        return f'SUB {self.wall_type.upper()}{self.wall_id} LP {self.longpoll}'
+        return f'SUB {self.wall_type.upper()} {self.wall_id} LP {self.longpoll}'
 
     async def repost_task(self):
         if hasattr(self, 'last_id'):
@@ -280,9 +296,7 @@ class Subscription:
                             async with ClientSession() as session:
                                 try: await discord.Webhook.from_url(url=self.channel.webhook_url, adapter=discord.AsyncWebhookAdapter(session)).send(embed=post_embed)
                                 except NotFound as exc:
-                                    if exc.code == 10015:
-                                        loop.create_task(self.channel.delete())
-                                    else: print(exc)
+                                    loop.create_task(self.channel.delete())
                                 else:
                                     self.last_id = wall['items'][0]['id']
                                     async with aiopg.connect(sets["psqlUri"]) as conn:
@@ -290,7 +304,8 @@ class Subscription:
                                             await cur.execute("UPDATE subscription SET last_id = %s WHERE channel_id = %s AND wall_id = %s AND wall_type = %s",
                                                 (self.last_id, self.channel.id, self.wall_id, self.wall_type))
 
-                                    print(f'Repost POST {self.last_id} from {self} to {self.channel} on {self.channel.server}')
+                                    msg = f'{self.channel.server}\n\t{self.channel}\n\t\t{self}\n\t\t\tRepost POST {self.last_id}'
+                                    Server.client.logger.info('Repost {{aa}}POST{{aa}} {{tttpy}}\n{msg} {{ttt}}'.format(msg=msg))
                 await asyncio.sleep(60)
         else:
             async with aiovk.TokenSession(self.token) as ses:
@@ -304,8 +319,7 @@ class Subscription:
                         async with ClientSession() as session:
                             try: await discord.Webhook.from_url(url=self.channel.webhook_url, adapter=discord.AsyncWebhookAdapter(session)).send(embed=post_embed)
                             except NotFound as exc:
-                                if exc.status == 10015:
-                                    self.loop.create_task(self.channel.delete())
-                                else: print(exc)
+                                self.loop.create_task(self.channel.delete())
                             else:
-                                print(f'Repost POST {wall["items"][0]["id"]} from {self} to {self.channel} on {self.channel.server}')
+                                msg = f'{self.channel.server}\n\t{self.channel}\n\t\t{self}\n\t\t\tRepost POST {wall["items"][0]["id"]}'
+                                Server.client.logger.info('Repost {{aa}}POST{{aa}} {{tttpy}}\n{msg} {{ttt}}'.format(msg=msg))

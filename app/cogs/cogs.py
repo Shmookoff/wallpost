@@ -26,12 +26,20 @@ class Cogs(commands.Cog):
                 )]
 
     def __init__(self, client):
-        print(f'Load COG {self.__name__}')
+        msg = f'Load COG {self.__name__}'
+        if hasattr(client, 'cogs_msg'):
+            client.cogs_msg += f'\n\t{msg}'
+        else:
+            client.logger.info(msg)
 
         self.client = client
 
     def cog_unload(self):
-        print(f'Unload COG {self.__name__}')
+        msg = f'Unload COG {self.__name__}'
+        if hasattr(client, 'cogs_msg'):
+            client.cogs_msg += f'\n\t{msg}'
+        else:
+            client.logger.info(msg)
 
 
     @cog_ext.cog_subcommand(name='list',
@@ -64,7 +72,8 @@ class Cogs(commands.Cog):
                             )])
     @check_service_chn()
     async def cogs_load(self, ctx, cog=None):
-        if cog == None: 
+        if cog == None:
+            self.client.cogs_msg = 'Load COGs {{tttpy}}'
             msg, n = '✅ __Successfully loaded cogs:__\n', 0
             for filename in os.listdir('app/cogs'):
                 if filename.endswith('.py'):
@@ -77,7 +86,9 @@ class Cogs(commands.Cog):
             if n == 0:
                 msg += '`None`'
             else:
-                print()
+                self.client.cogs_msg += ' {{ttt}}'
+                self.client.logger.info(self.client.cogs_msg.format())
+            del self.client.cogs_msg
             await ctx.send(msg)
         else:
             try: self.client.load_extension(f'app.cogs.{cog}')
@@ -101,7 +112,8 @@ class Cogs(commands.Cog):
                             )])
     @check_service_chn()
     async def cogs_reload(self, ctx, cog=None):
-        if cog == None: 
+        if cog == None:
+            self.client.cogs_msg = 'Reload COGs {{tttpy}}'
             msg, n = '✅ __Successfully reloaded cogs:__\n', 0
             for filename in os.listdir('app/cogs'):
                 if filename.endswith('.py'):
@@ -114,7 +126,9 @@ class Cogs(commands.Cog):
             if n == 0:
                 msg += '`None`'
             else:
-                print()
+                self.client.cogs_msg += ' {{ttt}}'
+                self.client.logger.info(self.client.cogs_msg.format())
+            del self.client.cogs_msg
             await ctx.send(msg)
         else: 
             try: self.client.reload_extension(f'app.cogs.{cog}')
@@ -139,7 +153,8 @@ class Cogs(commands.Cog):
                             )])
     @check_service_chn()
     async def cogs_unload(self, ctx, cog=None):
-        if cog == None: 
+        if cog == None:
+            self.client.cogs_msg = 'Unload COGs {{tttpy}}'
             msg, n = '✅ __Successfully unloaded cogs:__\n', 0
             for filename in os.listdir('app/cogs'):
                 if filename.endswith('.py'):
@@ -152,7 +167,9 @@ class Cogs(commands.Cog):
             if n == 0:
                 msg += '`None`'
             else:
-                print()
+                self.client.cogs_msg += ' {{ttt}}'
+                self.client.logger.info(self.client.cogs_msg.format())
+            del self.client.cogs_msg
             await ctx.send(msg)
         else:
             try: self.client.unload_extension(f'app.cogs.{cog}')

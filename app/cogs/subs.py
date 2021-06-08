@@ -24,7 +24,11 @@ class Subscriptions(commands.Cog):
     __name__ = 'Subscriptions Command'
 
     def __init__(self, client):
-        print(f'Load COG {self.__name__}')
+        msg = f'Load COG {self.__name__}'
+        if hasattr(client, 'cogs_msg'):
+            client.cogs_msg += f'\n\t{msg}'
+        else:
+            client.logger.info(msg)
 
         self.user_fields = 'photo_max,status,screen_name,followers_count,verified'
         self.group_fields = 'photo_200,status,screen_name,members_count,verified'
@@ -32,11 +36,6 @@ class Subscriptions(commands.Cog):
         self.client = client
         self.loop = client.loop
         self.loop.create_task(self.ainit())
-
-    def cog_unload(self):
-        print(f'Unload COG {self.__name__}')
-        Server.uninit_all()
-
 
     async def ainit(self):
         async with aiopg.connect(sets["psqlUri"]) as conn:
@@ -48,20 +47,31 @@ class Subscriptions(commands.Cog):
                 await cur.execute("SELECT wall_id, wall_type, last_id, token, added_by, channel_id FROM subscription")
                 subs = await cur.fetchall()
 
+                msg = 'INIT {{aa}}SRVs{{aa}} {{tttpy}}'
                 for srv in srvs:
-                    _srv = Server.init(srv['id'], srv['lang'], srv['token'])
-
+                    _srv, _msg = Server.init(srv['id'], srv['lang'], srv['token'])
+                    msg += f'\n{_msg}'
                     for chn in chns:
                         if chn['server_id'] == _srv.id:
-                            _chn = Channel.init(_srv, chn['id'], chn['webhook_url'])
-
+                            _chn, _msg = Channel.init(_srv, chn['id'], chn['webhook_url'])
+                            msg += f'\n{_msg}'
                             for sub in subs:
                                 if sub['channel_id'] == _chn.id:
-                                    _sub = Subscription.init(_chn, {
+                                    _sub, _msg = Subscription.init(_chn, {
                                         'wall_id': sub['wall_id'], 'wall_type': sub['wall_type'], 'last_id': sub['last_id'], 'token': sub['token'], 'added_by': sub['added_by']
                                     })
+                                    msg += f'\n{_msg}'
+                msg += ' {{ttt}}'
                 del srvs, chns, subs
-        print()
+        self.client.logger.info(msg.format())
+
+    def cog_unload(self):
+        msg = f'Unload COG {self.__name__}'
+        if hasattr(client, 'cogs_msg'):
+            client.cogs_msg += f'\n\t{msg}'
+        else:
+            client.logger.info(msg)
+        Server.uninit_all()
 
 
     @cog_ext.cog_subcommand(name='add',
@@ -78,7 +88,7 @@ class Subscriptions(commands.Cog):
                                 option_type=7,
                                 required=False
                             )])
-    @commands.bot_has_permissions(manage_webhooks=True, add_reactions=True, manage_messages=True, read_message_history=True, send_messages=True)
+    @commands.bot_has_permissions(manage_webhooks=True, add_reactions=True, manage_messages=True)
     @commands.has_permissions(manage_webhooks=True)
     async def sub_add(self, ctx, wall_id, channel=None):
         vk_token = Server.find_by_args(ctx.guild.id).token
@@ -155,7 +165,7 @@ class Subscriptions(commands.Cog):
                                 option_type=7,
                                 required=False
                             )])
-    @commands.bot_has_permissions(send_messages=True)
+    @commands.bot_has_permissions(manage_webhooks=True, add_reactions=True, manage_messages=True)
     @commands.has_permissions(manage_webhooks=True)
     async def sub_info(self, ctx, channel=None):
         vk_token = Server.find_by_args(ctx.guild.id).token
@@ -238,7 +248,7 @@ class Subscriptions(commands.Cog):
                                 option_type=7,
                                 required=False
                             )])
-    @commands.bot_has_permissions(manage_webhooks=True, add_reactions=True, manage_messages=True, read_message_history=True, send_messages=True)
+    @commands.bot_has_permissions(manage_webhooks=True, add_reactions=True, manage_messages=True)
     @commands.has_permissions(manage_webhooks=True)
     async def sub_del(self, ctx, wall_id, channel=None):
         vk_token = Server.find_by_args(ctx.guild.id).token
