@@ -18,13 +18,6 @@ sets = {
     "dcToken": envar["dc"],
 }
 
-vk_sets = {
-    "appId": 7797033,
-    "redirectUri": f"{sets['url']}/oauth2/redirect",
-    "secureKey": envar["vk"]["secure"],
-    "serviceKey": envar["vk"]["service"],
-}
-
 branch = envar.get("branch", None)
 if branch == "MAIN":
     sets["url"] = "https://wallpostvk.herokuapp.com"
@@ -44,3 +37,10 @@ else:
     sets["srvcChnId"] = 843838814153343027
     sets['logChnId'] = 843838843262337024
     sets["version"] = 'DEV'
+
+vk_sets = {
+    "appId": 7797033,
+    "redirectUri": f"{sets['url']}/oauth2/redirect",
+    "secureKey": envar["vk"]["secure"],
+    "serviceKey": envar["vk"]["service"],
+}
