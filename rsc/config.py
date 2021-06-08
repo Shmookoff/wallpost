@@ -19,7 +19,6 @@ sets = {
 }
 
 branch = envar.get("branch")
-print(branch)
 if branch == "MAIN":
     sets["url"] = "https://wallpostvk.herokuapp.com"
     

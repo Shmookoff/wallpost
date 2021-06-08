@@ -1,5 +1,6 @@
 import discord
-from discord.errors import NotFound
+from discord.ext import commands
+from discord import errors as discord_errors
 
 import asyncio
 import aiopg
@@ -128,7 +129,10 @@ class Channel:
 
     @classmethod
     async def add(cls, server, discord_channel, info=None):
-        webhook = await discord_channel.create_webhook(name=f"WallPost {sets['version'] if sets['version'] == 'DEV' else 'VK'}")
+        try:
+            webhook = await discord_channel.create_webhook(name=f"WallPost {sets['version'] if sets['version'] == 'DEV' else 'VK'}")
+        except discord_errors.Forbidden as exc:
+            raise commands.BotMissingPermissions(['manage_webhooks'])
         self = cls(server, discord_channel.id, webhook.url)
 
         async with aiopg.connect(sets["psqlUri"]) as conn:
@@ -156,7 +160,7 @@ class Channel:
         if is_called is False:
             async with ClientSession() as session:
                 try: await discord.Webhook.from_url(url=self.webhook_url, adapter=discord.AsyncWebhookAdapter(session)).delete()
-                except NotFound as exc:
+                except discord_errors.NotFound as exc:
                     pass
 
             async with aiopg.connect(sets["psqlUri"]) as conn:
@@ -295,7 +299,7 @@ class Subscription:
                             post_embed = compile_post_embed(wall)
                             async with ClientSession() as session:
                                 try: await discord.Webhook.from_url(url=self.channel.webhook_url, adapter=discord.AsyncWebhookAdapter(session)).send(embed=post_embed)
-                                except NotFound as exc:
+                                except discord_errors.NotFound as exc:
                                     loop.create_task(self.channel.delete())
                                 else:
                                     self.last_id = wall['items'][0]['id']
@@ -318,7 +322,7 @@ class Subscription:
 
                         async with ClientSession() as session:
                             try: await discord.Webhook.from_url(url=self.channel.webhook_url, adapter=discord.AsyncWebhookAdapter(session)).send(embed=post_embed)
-                            except NotFound as exc:
+                            except discord_errors.NotFound as exc:
                                 self.loop.create_task(self.channel.delete())
                             else:
                                 msg = f'{self.channel.server}\n\t{self.channel}\n\t\t{self}\n\t\t\tRepost POST {wall["items"][0]["id"]}'

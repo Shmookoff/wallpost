@@ -1,10 +1,6 @@
 import discord
 from discord.ext import commands
 
-import traceback
-import sys
-from io import StringIO
-
 import discord_slash.error as slash_errors
 import aiovk.exceptions as aiovk_errors
 

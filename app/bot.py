@@ -20,21 +20,24 @@ class WallPost(commands.Bot):
     __name__ = 'WallPost'
 
     def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+        intents = discord.Intents.default()
+        intents.members = True
+        super().__init__(*args, intents=intents, command_prefix='.', activity=discord.Activity(name='/subs add', type=0), **kwargs)
+
         self.logger = WPLoggerAdapter(WPLogger(self.loop), {'tb': ''})
-
         self.ipc = ipc.Server(self, secret_key=sets['ipcSecretKey'])
-        self.ipc.start()
-
         Server.client = self
+
+        self.ipc.start()
         self.remove_command('help')
 
     async def on_ready(self):
         self.logger.logger.add_discord_handler(logging.INFO, self.get_channel(sets['logChnId']))
+        self.slash = SlashCommand(self, sync_commands=True, sync_on_cog_reload=True)
+        self.ping_server.start()
 
-        self.init_msg = "INIT {{aa}}{name}{{aa}} {{tttpy}}"
-        self.init_msg += f'\nLogged on as {self.user}'
-
+        self.init_msg = "INIT {{aa}}{name}{{aa}} {{tttpy}}\nLogged on as {user}"
+        
         async with aiopg.connect(sets["psqlUri"]) as conn:
             async with conn.cursor(cursor_factory=DictCursor) as cur:
                 await cur.execute("SELECT id FROM server")
@@ -61,9 +64,6 @@ class WallPost(commands.Bot):
                             await cur.execute("DELETE FROM server WHERE id = %s", (guild,))
                         self.init_msg += f'\n\tDelete SERVER {guild} from DB'
 
-        self.slash = SlashCommand(self, sync_commands=True, sync_on_cog_reload=True)
-        self.ping_server.start()
-
         self.cogs_msg = '\nLoad COGs'
         try: self.load_extension('app.cogs.handler')
         except commands.ExtensionAlreadyLoaded:
@@ -76,10 +76,8 @@ class WallPost(commands.Bot):
         self.init_msg += self.cogs_msg
         del self.cogs_msg
 
-        self.init_msg += f'\n/CMNDS: {list(self.slash.commands.keys())}'
-        
-        self.init_msg += ' {{ttt}}'
-        self.logger.info(self.init_msg.format(name=self.__name__))
+        self.init_msg += '\n/CMNDS: {commands} {{ttt}}'
+        self.logger.info(self.init_msg.format(name=self.__name__, user=self.user, commands=list(self.slash.commands.keys())))
         del self.init_msg
 
     async def on_ipc_ready(self):
@@ -194,7 +192,5 @@ class DiscordHandler(logging.StreamHandler):
             self.handleError(record)
 
 if __name__ == '__main__':
-    intents = discord.Intents.default()
-    intents.members = True
-    client = WallPost(command_prefix='.', intents=intents, activity=discord.Activity(name='/subs add', type=0))
+    client = WallPost()
     client.run(sets["dcToken"])

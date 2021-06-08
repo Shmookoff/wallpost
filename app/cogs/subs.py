@@ -87,7 +87,8 @@ class Subscriptions(commands.Cog):
                                 description='Default: current Channel',
                                 option_type=7,
                                 required=False
-                            )])
+                            )],
+                            guild_ids=None if sets['version'] == 'MAIN' else [sets['srvcSrv']])
     @commands.bot_has_permissions(manage_webhooks=True, add_reactions=True, manage_messages=True)
     @commands.has_permissions(manage_webhooks=True)
     async def sub_add(self, ctx, wall_id, channel=None):
@@ -105,7 +106,7 @@ class Subscriptions(commands.Cog):
             if len(await channel.webhooks()) == 10:
                 raise MaximumWebhooksReached
         except DiscordForbidden as exc:
-            raise ChannelForbiddenWebhooks
+            raise commands.BotMissingPermissions(['manage_webhooks'])
 
 
         async with aiovk.TokenSession(vk_token) as ses:
@@ -164,7 +165,8 @@ class Subscriptions(commands.Cog):
                                 description='Default: current Channel',
                                 option_type=7,
                                 required=False
-                            )])
+                            )],
+                            guild_ids=None if sets['version'] == 'MAIN' else [sets['srvcSrv']])
     @commands.bot_has_permissions(manage_webhooks=True, add_reactions=True, manage_messages=True)
     @commands.has_permissions(manage_webhooks=True)
     async def sub_info(self, ctx, channel=None):
@@ -247,7 +249,8 @@ class Subscriptions(commands.Cog):
                                 description='Default: current Channel',
                                 option_type=7,
                                 required=False
-                            )])
+                            )],
+                            guild_ids=None if sets['version'] == 'MAIN' else [sets['srvcSrv']])
     @commands.bot_has_permissions(manage_webhooks=True, add_reactions=True, manage_messages=True)
     @commands.has_permissions(manage_webhooks=True)
     async def sub_del(self, ctx, wall_id, channel=None):
@@ -333,7 +336,8 @@ class Subscriptions(commands.Cog):
 
     @cog_ext.cog_subcommand(name='account',
                             base='subs',
-                            description='Show VK Account linked to this Server')
+                            description='Show VK Account linked to this Server',
+                            guild_ids=None if sets['version'] == 'MAIN' else [sets['srvcSrv']])
     @commands.has_permissions(administrator=True)
     async def account(self, ctx):
         vk_token = Server.find_by_args(ctx.guild.id).token
@@ -348,7 +352,8 @@ class Subscriptions(commands.Cog):
 
     @cog_ext.cog_subcommand(name='link',
                             base='subs',
-                            description='Link this Server to your VK Account')
+                            description='Link this Server to your VK Account',
+                            guild_ids=None if sets['version'] == 'MAIN' else [sets['srvcSrv']])
     @commands.has_permissions(administrator=True)
     async def link(self, ctx):
         key = Fernet.generate_key().decode("utf-8")
