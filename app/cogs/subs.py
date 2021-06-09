@@ -102,11 +102,6 @@ class Subscriptions(commands.Cog):
         if channel is None:
             channel = ctx.channel
         ctx.webhook_channel = channel
-        try:
-            if len(await channel.webhooks()) == 10:
-                raise MaximumWebhooksReached
-        except DiscordForbidden as exc:
-            raise commands.BotMissingPermissions(['manage_webhooks'])
 
 
         async with aiovk.TokenSession(vk_token) as ses:

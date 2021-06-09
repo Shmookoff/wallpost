@@ -14,6 +14,7 @@ import traceback
 
 from rsc.config import sets
 from rsc.functions import compile_post_embed
+from rsc.exceptions import MaximumWebhooksReached
 
 
 loop = asyncio.get_event_loop()
@@ -132,7 +133,13 @@ class Channel:
         try:
             webhook = await discord_channel.create_webhook(name=f"WallPost {sets['version'] if sets['version'] == 'DEV' else 'VK'}")
         except discord_errors.Forbidden as exc:
-            raise commands.BotMissingPermissions(['manage_webhooks'])
+            if exc.code == 50013:
+                raise commands.BotMissingPermissions(['manage_webhooks'])
+            raise
+        except discord_errors.HTTPException as exc:
+            if exc.code == 30007:
+                raise MaximumWebhooksReached
+            raise
         self = cls(server, discord_channel.id, webhook.url)
 
         async with aiopg.connect(sets["psqlUri"]) as conn:
@@ -160,6 +167,10 @@ class Channel:
         if is_called is False:
             async with ClientSession() as session:
                 try: await discord.Webhook.from_url(url=self.webhook_url, adapter=discord.AsyncWebhookAdapter(session)).delete()
+                except discord_errors.Forbidden as exc:
+                    if exc.code == 50013:
+                        raise commands.BotMissingPermissions(['manage_webhooks'])
+                    raise
                 except discord_errors.NotFound as exc:
                     pass
 

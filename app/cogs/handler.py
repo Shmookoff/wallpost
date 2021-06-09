@@ -50,8 +50,6 @@ class ExceptionHandler(commands.Cog):
             elif ctx.subcommand_name == 'link':
                 pass
             elif ctx.subcommand_name == 'add':
-                if isinstance(exc, ChannelForbiddenWebhooks):
-                    exc.embed = set_error_embed(f'WallPost VK is missing **Manage Webhooks** permission in Channel.\n\n> Try giving WallPost VK **Manage Webhooks** permission in {ctx.webhook_channel.mention}.')
                 if isinstance(exc, MaximumWebhooksReached):
                     exc.embed = set_error_embed(f'Maximum number of webhooks reached (10).\n> Try removing a webhook from {ctx.webhook_channel.mention}.')
                 elif isinstance(exc, WallClosed):
@@ -64,11 +62,12 @@ class ExceptionHandler(commands.Cog):
             elif ctx.subcommand_name == 'del':
                 if isinstance(exc, NotSub):
                     exc.embed = set_error_embed(f'{ctx.webhook_channel.mention} isn\'t subscribed to wall **{ctx.kwargs["wall_id"]}**.')
-
-        if not hasattr(exc, 'embed'):
+        elif ctx.name == 'cogs':
             if isinstance(exc, slash_errors.CheckFailure):
                 exc.embed = set_error_embed(f'No 🙂')
-            elif isinstance(exc, NotAuthenticated):
+            
+        if not hasattr(exc, 'embed'):
+            if isinstance(exc, NotAuthenticated):
                 exc.embed = set_error_embed(f'You aren\'t authenticated.\n\n> Use `/subs link` to link your VK profile.')
             elif isinstance(exc, aiovk_errors.VkAuthError):
                 exc.embed = set_error_embed('Can\'t gain access to your VK account.\n\n> Use `/subs link` to relink your VK profile.')
