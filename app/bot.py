@@ -26,14 +26,24 @@ class WallPost(commands.Bot):
 
         self.logger = WPLoggerAdapter(WPLogger(self.loop), {'tb': ''})
         self.ipc = ipc.Server(self, secret_key=sets['ipcSecretKey'])
+        self.slash = SlashCommand(self, sync_commands=True, sync_on_cog_reload=True)
         Server.client = self
+
+        self.cogs_msg = '\nLoad COGs'
+        try: self.load_extension('app.cogs.handler')
+        except commands.ExtensionAlreadyLoaded:
+            self.reload_extension('app.cogs.handler')
+        for filename in os.listdir('app/cogs'):
+            if filename.endswith('.py') and filename != 'handler.py':
+                try: self.load_extension(f'app.cogs.{filename[:-3]}')
+                except commands.ExtensionAlreadyLoaded:
+                    self.reload_extension(f'app.cogs.{filename[:-3]}')
 
         self.ipc.start()
         self.remove_command('help')
 
     async def on_ready(self):
         self.logger.logger.add_discord_handler(logging.INFO, self.get_channel(sets['logChnId']))
-        self.slash = SlashCommand(self, sync_commands=True, sync_on_cog_reload=True)
         self.ping_server.start()
 
         self.init_msg = "INIT {{aa}}{name}{{aa}} {{tttpy}}\nLogged on as {user}"
@@ -64,15 +74,6 @@ class WallPost(commands.Bot):
                             await cur.execute("DELETE FROM server WHERE id = %s", (guild,))
                         self.init_msg += f'\n\tDelete SERVER {guild} from DB'
 
-        self.cogs_msg = '\nLoad COGs'
-        try: self.load_extension('app.cogs.handler')
-        except commands.ExtensionAlreadyLoaded:
-            self.reload_extension('app.cogs.handler')
-        for filename in os.listdir('app/cogs'):
-            if filename.endswith('.py') and filename != 'handler.py':
-                try: self.load_extension(f'app.cogs.{filename[:-3]}')
-                except commands.ExtensionAlreadyLoaded:
-                    self.reload_extension(f'app.cogs.{filename[:-3]}')
         self.init_msg += self.cogs_msg
         del self.cogs_msg
 
