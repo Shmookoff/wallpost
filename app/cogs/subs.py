@@ -89,7 +89,7 @@ class Subscriptions(commands.Cog):
                                 required=False
                             )],
                             guild_ids=None if sets['version'] == 'MAIN' else [sets['srvcSrv']])
-    @commands.bot_has_permissions(manage_webhooks=True, add_reactions=True, manage_messages=True)
+    @commands.bot_has_permissions(manage_webhooks=True, embed_links=True, add_reactions=True, manage_messages=True, read_message_history=True)
     @commands.has_permissions(manage_webhooks=True)
     async def sub_add(self, ctx, wall_id, channel=None):
         vk_token = Server.find_by_args(ctx.guild.id).token
@@ -162,7 +162,7 @@ class Subscriptions(commands.Cog):
                                 required=False
                             )],
                             guild_ids=None if sets['version'] == 'MAIN' else [sets['srvcSrv']])
-    @commands.bot_has_permissions(manage_webhooks=True, add_reactions=True, manage_messages=True)
+    @commands.bot_has_permissions(manage_webhooks=True, embed_links=True, add_reactions=True, manage_messages=True, read_message_history=True)
     @commands.has_permissions(manage_webhooks=True)
     async def sub_info(self, ctx, channel=None):
         vk_token = Server.find_by_args(ctx.guild.id).token
@@ -246,7 +246,7 @@ class Subscriptions(commands.Cog):
                                 required=False
                             )],
                             guild_ids=None if sets['version'] == 'MAIN' else [sets['srvcSrv']])
-    @commands.bot_has_permissions(manage_webhooks=True, add_reactions=True, manage_messages=True)
+    @commands.bot_has_permissions(manage_webhooks=True, embed_links=True, add_reactions=True, manage_messages=True, read_message_history=True)
     @commands.has_permissions(manage_webhooks=True)
     async def sub_del(self, ctx, wall_id, channel=None):
         vk_token = Server.find_by_args(ctx.guild.id).token
@@ -333,6 +333,7 @@ class Subscriptions(commands.Cog):
                             base='subs',
                             description='Show VK Account linked to this Server',
                             guild_ids=None if sets['version'] == 'MAIN' else [sets['srvcSrv']])
+    @commands.bot_has_permissions(manage_webhooks=True, embed_links=True, add_reactions=True, manage_messages=True, read_message_history=True)
     @commands.has_permissions(administrator=True)
     async def account(self, ctx):
         vk_token = Server.find_by_args(ctx.guild.id).token
@@ -349,6 +350,7 @@ class Subscriptions(commands.Cog):
                             base='subs',
                             description='Link this Server to your VK Account',
                             guild_ids=None if sets['version'] == 'MAIN' else [sets['srvcSrv']])
+    @commands.bot_has_permissions(manage_webhooks=True, embed_links=True, add_reactions=True, manage_messages=True, read_message_history=True)
     @commands.has_permissions(administrator=True)
     async def link(self, ctx):
         key = Fernet.generate_key().decode("utf-8")
