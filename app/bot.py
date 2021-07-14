@@ -62,7 +62,6 @@ class WallPost(commands.Bot):
 
             if guilds_connected_array != guilds_in_db_array:
                 self.init_msg += '\nUpdate DB'
-                self.logger.debug(f'{guilds_connected_array} {guilds_in_db_array}')
                 for guild in guilds_connected_array:
                     if not guild in guilds_in_db_array:
                         async with conn.cursor(cursor_factory=DictCursor) as cur:
