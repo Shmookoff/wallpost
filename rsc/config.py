@@ -1,6 +1,7 @@
 import os
 import json
 import asyncio
+import platform
 from dotenv import load_dotenv
 
 
@@ -33,7 +34,6 @@ else:
         sets["url"] = 'https://dev894539-wallpostvk.herokuapp.com'
     elif branch is None:
         sets["url"] = "http://localhost:5000"
-        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
     
     sets["psqlUri"] = envar["db"]
     sets["srvcChnId"] = 843838814153343027
@@ -46,3 +46,6 @@ vk_sets = {
     "secureKey": envar["vk"]["secure"],
     "serviceKey": envar["vk"]["service"],
 }
+
+if platform.system() == "Windows":
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
