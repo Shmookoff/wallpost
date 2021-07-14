@@ -1,8 +1,10 @@
 import os
 import json
 import asyncio
+from dotenv import load_dotenv
 
 
+load_dotenv()
 envar = json.loads(os.environ.get("WALLPOST"))
 
 sets = {
