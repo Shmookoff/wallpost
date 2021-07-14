@@ -11,11 +11,89 @@ from aiohttp import ClientSession
 from psycopg2.extras import DictCursor
 
 import traceback
+import logging
+import sys
+from io import StringIO
 
 from rsc.config import sets
 from rsc.functions import compile_post_embed
 from rsc.exceptions import MaximumWebhooksReached
 
+
+class WPLogger(logging.Logger):
+    def __init__(self, loop):
+        super().__init__('WallPost', logging.DEBUG)
+        self.loop = loop
+        self.formatter = logging.Formatter('[%(levelname)s]: %(message)s')
+
+        self.add_stream_handler(logging.DEBUG)
+
+    def add_stream_handler(self, level):
+        stream_handler = StreamHandler(level)
+        stream_handler.setFormatter(self.formatter)
+        self.addHandler(stream_handler)
+
+    def add_discord_handler(self, level, channel):
+        discord_handler = DiscordHandler(level, self.loop, channel)
+        discord_handler.setFormatter(self.formatter)
+        self.addHandler(discord_handler)
+
+class WPLoggerAdapter(logging.LoggerAdapter):
+    def __init__(self, logger, extra={}):
+        super().__init__(logger, extra)
+
+    def process(self, msg, kwargs):
+        extra = kwargs.get("extra", {})
+        extra.update({"tb": kwargs.pop("tb", '')})
+        kwargs["extra"] = extra
+        return msg, kwargs
+
+class SafeDict(dict):
+    def __missing__(self, key):
+        return '{'+key+'}'
+
+class StreamHandler(logging.StreamHandler):
+    def __init__(self, level):
+        super().__init__(sys.stdout)
+        self.setLevel(level)
+
+    def emit(self, record):
+        try:
+            msg = self.format(record)
+            msg = msg.format_map(SafeDict(t='', ttt='', tttpy='', aa=''))
+            if record.tb != '':
+                msg = f'{msg}\n{record.tb}'
+
+            self.stream.write(msg + self.terminator)
+            self.flush()
+        except RecursionError:
+            raise
+        except Exception:
+            self.handleError(record)
+
+class DiscordHandler(logging.StreamHandler):
+    def __init__(self, level, loop, channel: discord.TextChannel):
+        super().__init__()
+        self.loop = loop
+        self.channel = channel
+        self.setLevel(level)
+
+    def emit(self, record):
+        try:
+            msg = self.format(record)
+            msg = msg.format_map(SafeDict(t='`', ttt='```', tttpy='```py', aa='**'))
+            if record.tb != '':
+                if len(f'{msg}\n```py\n{record.tb}\n```') <= 2000:
+                    task = self.channel.send(f'{msg}\n```py\n{record.tb}\n```')
+                else:
+                    task = self.channel.send(msg, file=discord.File(StringIO(record.tb), filename='traceback.python'))
+            else:
+                task = self.channel.send(content=msg)
+
+            self.loop.create_task(task)
+            self.flush()
+        except Exception as exc:
+            self.handleError(record)
 
 loop = asyncio.get_event_loop()
 
@@ -58,7 +136,7 @@ class Server:
                 await cur.execute("INSERT INTO server (id) VALUES(%s)", (self.id,))
 
         msg = f'Add {self}'
-        Server.client.logger.info('Add {{aa}}SRV{{aa}} {{tttpy}}\n{msg} {{ttt}}'.format(msg=msg))
+        Server.client.logger.info('Add {aa}SRV{aa} {tttpy}\n{msg} {ttt}'.format_map(SafeDict(msg=msg)))
         return self
 
     async def delete(self):
@@ -74,7 +152,7 @@ class Server:
 
         Server.all.remove(self)
 
-        Server.client.logger.info('Del {{aa}}SRV{{aa}} {{tttpy}}\n{msg} {{ttt}}'.format(msg=msg))
+        Server.client.logger.info('Del {aa}SRV{aa} {tttpy}\n{msg} {ttt}'.format_map(SafeDict(msg=msg)))
 
     async def set_token(self, token):
         self.token = token
@@ -151,7 +229,7 @@ class Channel:
             _, _msg = await Subscription.add(self, info, True)
             msg += f'\n{_msg}'
 
-        Server.client.logger.info('Add {{aa}}CHN{{aa}} {{tttpy}}\n{msg} {{ttt}}'.format(msg=msg))
+        Server.client.logger.info('Add {aa}CHN{aa} {tttpy}\n{msg} {ttt}'.format_map(SafeDict(msg=msg)))
         return self
 
     async def delete(self, is_called=False):
@@ -182,7 +260,7 @@ class Channel:
         self.server.channels.remove(self)
 
         if is_called is False:
-            Server.client.logger.info('Del {{aa}}CHN{{aa}} {{tttpy}}\n{msg} {{ttt}}'.format(msg=msg))
+            Server.client.logger.info('Del {aa}CHN{aa} {tttpy}\n{msg} {ttt}'.format_map(SafeDict(msg=msg)))
         else:
             return msg
 
@@ -215,7 +293,6 @@ class Channel:
 
     def __str__(self):
         return f'CHN {self.id} WH {self.webhook_id}'
-
 
 class Subscription:
     all = []
@@ -262,7 +339,7 @@ class Subscription:
         if is_called is True:
             return self, msg
 
-        Server.client.logger.info('Add {{aa}}SUB{{aa}} {{tttpy}}\n{msg} {{ttt}}'.format(msg=msg))
+        Server.client.logger.info('Add {aa}SUB{aa} {tttpy}\n{msg} {ttt}'.format_map(SafeDict(msg=msg)))
         return self
 
     async def delete(self, is_called=False):
@@ -285,7 +362,7 @@ class Subscription:
 
         self.task.cancel()
         if is_called is False:
-            Server.client.logger.info('Del {{aa}}SUB{{aa}} {{tttpy}}\n{msg} {{ttt}}'.format(msg=msg))
+            Server.client.logger.info('Del {aa}SUB{aa} {tttpy}\n{msg} {ttt}'.format_map(SafeDict(msg=msg)))
         else:
             return msg
 
@@ -320,7 +397,7 @@ class Subscription:
                                                 (self.last_id, self.channel.id, self.wall_id, self.wall_type))
 
                                     msg = f'{self.channel.server}\n\t{self.channel}\n\t\t{self}\n\t\t\tRepost POST {self.last_id}'
-                                    Server.client.logger.info('Repost {{aa}}POST{{aa}} {{tttpy}}\n{msg} {{ttt}}'.format(msg=msg))
+                                    Server.client.logger.info('Repost {aa}POST{aa} {tttpy}\n{msg} {ttt}'.format_map(SafeDict(msg=msg)))
                 await asyncio.sleep(60)
         else:
             async with aiovk.TokenSession(self.token) as ses:
@@ -337,4 +414,4 @@ class Subscription:
                                 self.loop.create_task(self.channel.delete())
                             else:
                                 msg = f'{self.channel.server}\n\t{self.channel}\n\t\t{self}\n\t\t\tRepost POST {wall["items"][0]["id"]}'
-                                Server.client.logger.info('Repost {{aa}}POST{{aa}} {{tttpy}}\n{msg} {{ttt}}'.format(msg=msg))
+                                Server.client.logger.info('Repost {aa}POST{aa} {tttpy}\n{msg} {ttt}'.format_map(SafeDict(msg=msg)))

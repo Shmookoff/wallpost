@@ -10,10 +10,10 @@ import os
 import traceback
 import sys
 import logging
-from io import StringIO
+import re
 
 from rsc.config import sets
-from rsc.classes import Server
+from rsc.classes import Server, WPLoggerAdapter, WPLogger, SafeDict
 
 
 class WallPost(commands.Bot):
@@ -46,7 +46,7 @@ class WallPost(commands.Bot):
         self.logger.logger.add_discord_handler(logging.INFO, self.get_channel(sets['logChnId']))
         self.ping_server.start()
 
-        self.init_msg = "INIT {{aa}}{name}{{aa}} {{tttpy}}\nLogged on as {user}"
+        self.init_msg = "INIT {aa}{name}{aa} {tttpy}\nLogged on as {user}"
         
         async with aiopg.connect(sets["psqlUri"]) as conn:
             async with conn.cursor(cursor_factory=DictCursor) as cur:
@@ -76,8 +76,8 @@ class WallPost(commands.Bot):
         self.init_msg += self.cogs_msg
         del self.cogs_msg
 
-        self.init_msg += '\n/CMNDS: {commands} {{ttt}}'
-        self.logger.info(self.init_msg.format(name=self.__name__, user=self.user, commands=list(self.slash.commands.keys())))
+        self.init_msg += '\n/CMNDS: {commands} {ttt}'
+        self.logger.info(self.init_msg.format_map(SafeDict(name=self.__name__, user=self.user, commands=list(self.slash.commands.keys()))))
         del self.init_msg
 
     async def on_ipc_ready(self):
@@ -95,7 +95,7 @@ class WallPost(commands.Bot):
     async def error_handler(self, raised, **kwargs):
         if raised == 'general':
             tb = traceback.format_exc()
-            msg = 'Ignoring exception in {{t}}{event}{{t}}:'.format(event=kwargs['event'])
+            msg = 'Ignoring exception in {t}{event}{t}:'.format_map(SafeDict(event=kwargs['event']))
         else:
             tb = "".join(traceback.format_exception(type(kwargs["exc"]), kwargs["exc"], kwargs["exc"].__traceback__))
             if raised in ['slash_command', 'command']:
@@ -104,10 +104,9 @@ class WallPost(commands.Bot):
                 elif raised == 'command':
                     cmnd_name = f'.{kwargs["ctx"].command}'
                 print(kwargs["ctx"].kwargs)
-                msg = 'Ignoring exception in {{t}}{cmnd_name}{{t}} {{aa}}COMMAND{{aa}}:\nParams: {{t}}{kwargs}{{t}}'.format(cmnd_name=cmnd_name, kwargs=
-                    str(kwargs["ctx"].kwargs).replace('{', '(').replace('}', ')') if kwargs["ctx"].kwargs != {} else 'None')
+                msg = 'Ignoring exception in {t}{cmnd_name}{t} {aa}COMMAND{aa}:\nParams: {t}{kwargs}{t}'.format_map(SafeDict(cmnd_name=cmnd_name, kwargs=str(kwargs["ctx"].kwargs).replace('{', '(').replace('}', ')')))
             elif raised == 'endpoint':
-                msg = 'Ignoring exception in {{t}}{endpoint}{{t}} {{aa}}IPC ENDPOINT{{aa}}:'.format(endpoint=kwargs["endpoint"])
+                msg = 'Ignoring exception in {t}{endpoint}{t} {aa}IPC ENDPOINT{aa}:'.format_map(SafeDict(endpoint=kwargs["endpoint"]))
         self.logger.error(msg, tb=tb)
 
     @tasks.loop(minutes=15.0)
@@ -119,77 +118,6 @@ class WallPost(commands.Bot):
             except:
                 pass
 
-
-class WPLogger(logging.Logger):
-    def __init__(self, loop):
-        super().__init__('WallPost', logging.DEBUG)
-        self.loop = loop
-        self.formatter = logging.Formatter('[%(levelname)s]: %(message)s')
-
-        self.add_stream_handler(logging.DEBUG)
-
-    def add_stream_handler(self, level):
-        stream_handler = StreamHandler(level)
-        stream_handler.setFormatter(self.formatter)
-        self.addHandler(stream_handler)
-
-    def add_discord_handler(self, level, channel):
-        discord_handler = DiscordHandler(level, self.loop, channel)
-        discord_handler.setFormatter(self.formatter)
-        self.addHandler(discord_handler)
-
-class WPLoggerAdapter(logging.LoggerAdapter):
-    def __init__(self, logger, extra={}):
-        super().__init__(logger, extra)
-
-    def process(self, msg, kwargs):
-        extra = kwargs.get("extra", {})
-        extra.update({"tb": kwargs.pop("tb", '')})
-        kwargs["extra"] = extra
-        return msg, kwargs
-
-class StreamHandler(logging.StreamHandler):
-    def __init__(self, level):
-        super().__init__(sys.stdout)
-        self.setLevel(level)
-
-    def emit(self, record):
-        try:
-            msg = self.format(record)
-            msg = msg.format(t='', ttt='', tttpy='', aa='')
-            if record.tb != '':
-                msg = f'{msg}\n{record.tb}'
-
-            self.stream.write(msg + self.terminator)
-            self.flush()
-        except RecursionError:
-            raise
-        except Exception:
-            self.handleError(record)
-
-class DiscordHandler(logging.StreamHandler):
-    def __init__(self, level, loop, channel: discord.TextChannel):
-        super().__init__()
-        self.loop = loop
-        self.channel = channel
-        self.setLevel(level)
-
-    def emit(self, record):
-        try:
-            msg = self.format(record)
-            msg = msg.format(t='`', ttt='```', tttpy='```py', aa='**')
-            if record.tb != '':
-                if len(f'{msg}\n```py\n{record.tb}\n```') <= 2000:
-                    task = self.channel.send(f'{msg}\n```py\n{record.tb}\n```')
-                else:
-                    task = self.channel.send(msg, file=discord.File(StringIO(record.tb), filename='traceback.python'))
-            else:
-                task = self.channel.send(content=msg)
-
-            self.loop.create_task(task)
-            self.flush()
-        except Exception as exc:
-            self.handleError(record)
 
 if __name__ == '__main__':
     client = WallPost()

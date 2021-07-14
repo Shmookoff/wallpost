@@ -47,7 +47,7 @@ class Subscriptions(commands.Cog):
                 await cur.execute("SELECT wall_id, wall_type, last_id, token, added_by, channel_id FROM subscription")
                 subs = await cur.fetchall()
 
-                msg = 'INIT {{aa}}SRVs{{aa}} {{tttpy}}'
+                msg = 'INIT {aa}SRVs{aa} {tttpy}'
                 for srv in srvs:
                     _srv, _msg = Server.init(srv['id'], srv['lang'], srv['token'])
                     msg += f'\n{_msg}'
@@ -61,9 +61,9 @@ class Subscriptions(commands.Cog):
                                         'wall_id': sub['wall_id'], 'wall_type': sub['wall_type'], 'last_id': sub['last_id'], 'token': sub['token'], 'added_by': sub['added_by']
                                     })
                                     msg += f'\n{_msg}'
-                msg += ' {{ttt}}'
+                msg += ' {ttt}'
                 del srvs, chns, subs
-        self.client.logger.info(msg.format())
+        self.client.logger.info(msg)
 
     def cog_unload(self):
         msg = f'Unload COG {self.__name__}'
