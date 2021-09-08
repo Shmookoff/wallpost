@@ -30,8 +30,11 @@ class WallPost(commands.Bot):
         try: self.load_extension('app.cogs.handler')
         except commands.ExtensionAlreadyLoaded:
             self.reload_extension('app.cogs.handler')
+        try: self.load_extension('app.cogs.repost')
+        except commands.ExtensionAlreadyLoaded:
+            self.reload_extension('app.cogs.repost')
         for filename in os.listdir('app/cogs'):
-            if filename.endswith('.py') and filename != 'handler.py':
+            if filename.endswith('.py') and filename not in ['handler.py', 'repost.py']:
                 try: self.load_extension(f'app.cogs.{filename[:-3]}')
                 except commands.ExtensionAlreadyLoaded:
                     self.reload_extension(f'app.cogs.{filename[:-3]}')
