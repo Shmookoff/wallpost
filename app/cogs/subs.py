@@ -116,7 +116,7 @@ class Subscriptions(commands.Cog):
         logmsg = str()
         usr, usrmsg = self.repcog.User.find_by_args(ctx.author.id)
         if usr is None:
-            usr, usrmsg = self.repcog.User_add(ctx.author.id)
+            usr, usrmsg = await self.repcog.User_add(ctx.author.id)
         logmsg += f'{usrmsg}\n'
         token = usr.token
         if token is None:
@@ -198,7 +198,7 @@ class Subscriptions(commands.Cog):
         logmsg = str()
         usr, _ = self.repcog.User.find_by_args(ctx.author.id)
         if usr is None:
-            usr, usrmsg = self.repcog.User_add(ctx.author.id)
+            usr, usrmsg = await self.repcog.User_add(ctx.author.id)
             logmsg += f'{usrmsg}\n'
             self.logger.info('Add {aa}USR{aa} {tttpy}\n{msg} {ttt}'.format_map(SafeDict(msg=logmsg)))
         token = usr.token
@@ -279,7 +279,7 @@ class Subscriptions(commands.Cog):
         logmsg = str()
         usr, usrmsg = self.repcog.User.find_by_args(ctx.author.id)
         if usr is None:
-            usr, usrmsg = self.repcog.User_add(ctx.author.id)
+            usr, usrmsg = await self.repcog.User_add(ctx.author.id)
         logmsg += f'{usrmsg}\n'
         token = usr.token
         if token is None:
@@ -377,7 +377,7 @@ class Subscriptions(commands.Cog):
         logmsg = str()
         usr, _ = self.repcog.User.find_by_args(ctx.author.id)
         if usr is None:
-            usr, usrmsg = self.repcog.User_add(ctx.author.id)
+            usr, usrmsg = await self.repcog.User_add(ctx.author.id)
             logmsg += f'{usrmsg}\n'
             self.logger.info('Add {aa}USR{aa} {tttpy}\n{msg} {ttt}'.format_map(SafeDict(msg=logmsg)))
         token = usr.token
@@ -399,7 +399,7 @@ class Subscriptions(commands.Cog):
         logmsg = str()
         usr, _ = self.repcog.User.find_by_args(ctx.author.id)
         if usr is None:
-            usr, usrmsg = self.repcog.User_add(ctx.author.id)
+            usr, usrmsg = await self.repcog.User_add(ctx.author.id)
             logmsg += f'{usrmsg}\n'
             self.logger.info('Add {aa}USR{aa} {tttpy}\n{msg} {ttt}'.format_map(SafeDict(msg=logmsg)))
 
