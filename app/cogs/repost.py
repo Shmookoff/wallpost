@@ -208,6 +208,7 @@ class Repost(commands.Cog):
         @repost_task.before_loop
         async def before_repost_task(self):
             await self.cog.client.wait_until_ready()
+            self.task_walls = dict()
             self.task_subs = set()
             self.vk_pool = AsyncVkExecuteRequestPool()
 
