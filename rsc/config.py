@@ -28,6 +28,7 @@ if branch == "MAIN":
     sets["psqlUri"] = os.environ.get("DATABASE_URL")
     sets["srvcChnId"] = 823545137082531861
     sets['logChnId'] = 836705410630287451
+    sets['errorChnId'] = 881954576176132147
     sets["version"] = 'MAIN'
 else:
     if branch == "DEV":
@@ -38,6 +39,7 @@ else:
     sets["psqlUri"] = envar["db"]
     sets["srvcChnId"] = 843838814153343027
     sets['logChnId'] = 843838843262337024
+    sets['errorChnId'] = 881954231391760476
     sets["version"] = 'DEV'
 
 vk_sets = {

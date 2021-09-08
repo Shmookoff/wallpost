@@ -10,3 +10,4 @@ class NoSubs(Exception): pass
 class NotSub(Exception): pass
 class NotAuthenticated(Exception): pass
 class WallClosed(Exception): pass
+class MsgTooLong(Exception): pass

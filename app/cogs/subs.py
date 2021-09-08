@@ -1,12 +1,13 @@
 import discord
-from discord.errors import Forbidden as DiscordForbidden
 from discord.ext import commands, ipc
 from discord_slash import cog_ext
-from discord_slash.utils.manage_commands import create_option, create_choice
+from discord_slash.utils.manage_commands import create_option
+from discord_slash.utils.manage_components import create_button, create_actionrow, wait_for_component
+from discord_slash.model import ButtonStyle
 
-import asyncio
 import aiopg
 import aiovk
+from aiovk.pools import AsyncVkExecuteRequestPool
 from aiovk.exceptions import VkAPIError
 
 from psycopg2.extras import DictCursor
@@ -15,8 +16,8 @@ import texttable
 from cryptography.fernet import Fernet
 
 from rsc.config import sets
-from rsc.functions import compile_wall_embed, add_command_and_example, vk
-from rsc.classes import Server, Channel, Subscription
+from rsc.functions import compile_wall_embed, vk
+from rsc.classes import SafeDict
 from rsc.exceptions import *
 
 
@@ -24,58 +25,78 @@ class Subscriptions(commands.Cog):
     __name__ = 'Subscriptions Command'
 
     def __init__(self, client):
+        self.client = client
+        self.logger = self.client.logger
+        self.loop = self.client.loop
+        self.repcog = self.client.get_cog('Repost')
+        self.loop.create_task(self.ainit())
+
         msg = f'Load COG {self.__name__}'
-        if hasattr(client, 'cogs_msg'):
-            client.cogs_msg += f'\n\t{msg}'
+        if hasattr(self.client, 'cogs_msg'):
+            self.client.cogs_msg += f'\n\t{msg}'
         else:
-            client.logger.info(msg)
+            self.client.logger.info(msg)
 
         self.user_fields = 'photo_max,status,screen_name,followers_count,verified'
         self.group_fields = 'photo_200,status,screen_name,members_count,verified'
 
-        self.client = client
-        self.loop = client.loop
-        self.loop.create_task(self.ainit())
-
     async def ainit(self):
         async with aiopg.connect(sets["psqlUri"]) as conn:
             async with conn.cursor(cursor_factory=DictCursor) as cur:
-                await cur.execute("SELECT id, lang, token FROM server")
+                await cur.execute("SELECT id, lang FROM server")
                 srvs = await cur.fetchall()
                 await cur.execute("SELECT id, webhook_url, server_id FROM channel")
                 chns = await cur.fetchall()
-                await cur.execute("SELECT wall_id, wall_type, last_id, token, added_by, channel_id FROM subscription")
+                await cur.execute("SELECT wall_id, users_id, channel_id, msg, id FROM subscription")
                 subs = await cur.fetchall()
+                await cur.execute("SELECT id, public, last_id FROM wall")
+                walls = await cur.fetchall()
+                await cur.execute("SELECT id, token FROM users")
+                usrs = await cur.fetchall()
 
-                msg = 'INIT {aa}SRVs{aa} {tttpy}'
-                for srv in srvs:
-                    _srv, _msg = Server.init(srv['id'], srv['lang'], srv['token'])
-                    msg += f'\n{_msg}'
-                    for chn in chns:
-                        if chn['server_id'] == _srv.id:
-                            _chn, _msg = Channel.init(_srv, chn['id'], chn['webhook_url'])
-                            msg += f'\n{_msg}'
-                            for sub in subs:
-                                if sub['channel_id'] == _chn.id:
-                                    _sub, _msg = Subscription.init(_chn, {
-                                        'wall_id': sub['wall_id'], 'wall_type': sub['wall_type'], 'last_id': sub['last_id'], 'token': sub['token'], 'added_by': sub['added_by']
-                                    })
-                                    msg += f'\n{_msg}'
-                msg += ' {ttt}'
-                del srvs, chns, subs
-        self.client.logger.info(msg)
+        msg = 'INIT {aa}USRs{aa} {tttpy}\n'
+        for usr in usrs:
+            _usr, _msg = self.repcog.User_init(usr['id'], usr['token'])
+            msg += f'{_msg}\n'
+        msg += ' {ttt}'
+        del usrs
+        self.logger.info(msg)
+
+        msg = 'INIT {aa}WALLs{aa} {tttpy}\n'
+        for wall in walls:
+            _wall, _msg = self.repcog.Wall_init(wall['id'], wall['public'], wall['last_id'])
+            msg += f'{_msg}\n'
+        msg += ' {ttt}'
+        del walls
+        self.logger.info(msg)
+
+        msg = 'INIT {aa}SRVs{aa} {tttpy}\n'
+        for srv in srvs:
+            _srv, _msg = self.repcog.Server_init(srv['id'], srv['lang'])
+            msg += f'{_msg}\n'
+            for chn in chns:
+                if chn['server_id'] == _srv.id:
+                    _chn, _msg = _srv.Channel_init(chn['id'], chn['webhook_url'])
+                    msg += f'\t{_msg}\n'
+                    for sub in subs:
+                        if sub['channel_id'] == _chn.id:
+                            usr, _ = self.repcog.User.find_by_args(sub['users_id'])
+                            wall, _ = self.repcog.Wall.find_by_args(sub['wall_id'])
+                            _sub, _msg = _chn.Subscription_init(wall, usr, sub['msg'], sub['id'])
+                            msg += f'\t\t{_msg}\n'
+        msg += ' {ttt}'
+        del srvs, chns, subs
+        self.logger.info(msg)
 
     def cog_unload(self):
         msg = f'Unload COG {self.__name__}'
-        if hasattr(client, 'cogs_msg'):
-            client.cogs_msg += f'\n\t{msg}'
+        if hasattr(self.client, 'cogs_msg'):
+            self.client.cogs_msg += f'\n\t{msg}'
         else:
-            client.logger.info(msg)
-        Server.uninit_all()
+            self.client.logger.info(msg)
 
 
-    @cog_ext.cog_subcommand(name='add',
-                            base='subs',
+    @cog_ext.cog_subcommand(base='subs', name='add',
                             description='Subscribe Channel to VK Wall',
                             options=[create_option(
                                 name='wall_id',
@@ -92,8 +113,13 @@ class Subscriptions(commands.Cog):
     @commands.bot_has_permissions(manage_webhooks=True, send_messages=True, embed_links=True, add_reactions=True, manage_messages=True, read_message_history=True)
     @commands.has_permissions(manage_webhooks=True)
     async def sub_add(self, ctx, wall_id, channel=None):
-        vk_token = Server.find_by_args(ctx.guild.id).token
-        if vk_token is None:
+        logmsg = str()
+        usr, usrmsg = self.repcog.User.find_by_args(ctx.author.id)
+        if usr is None:
+            usr, usrmsg = self.repcog.User_add(ctx.author.id)
+        logmsg += f'{usrmsg}\n'
+        token = usr.token
+        if token is None:
             raise NotAuthenticated
         if wall_id.startswith('<') and wall_id.endswith('>'):
             raise WallIdBadArgument
@@ -104,7 +130,7 @@ class Subscriptions(commands.Cog):
         ctx.webhook_channel = channel
 
 
-        async with aiovk.TokenSession(vk_token) as ses:
+        async with aiovk.TokenSession(token) as ses:
             vkapi = aiovk.API(ses)
 
             try:
@@ -125,35 +151,39 @@ class Subscriptions(commands.Cog):
             group_embed = compile_wall_embed(group)
             user_embed = compile_wall_embed(user)
 
-            ctx.msg = await ctx.send(content='React with\n\t:one: for **first** wall\n\t:two: for **second** wall,\n\t❌ for cancel.', embeds=[group_embed, user_embed])
-            for emoji in ['1️⃣', '2️⃣', '❌']:
-                await ctx.msg.add_reaction(emoji)
+            if len(group['name']) > 25:
+                grp_name = f"{group['name'][:24]}…"
+            usr_name = f"{user['first_name']} {user['last_name']}"
+            if len(usr_name) > 25:
+                usr_name = f"{usr_name[:24]}…"
             
-            try:
-                r, u = await self.client.wait_for('reaction_add', check=lambda r, u: u == ctx.author and r.message.id == ctx.msg.id and r.emoji in ['1️⃣', '❌', '2️⃣'], timeout=120.0)
-            except asyncio.TimeoutError:
-                await ctx.msg.clear_reactions()
-                await ctx.msg.edit(content='❌ Cancelled (timeout)', embed=None)
-            else:
-                await ctx.msg.clear_reactions()
+            buttons = [create_button(
+                    style=ButtonStyle.blue, label=grp_name, emoji="1️⃣", custom_id='group'),
+                create_button(
+                    style=ButtonStyle.blue, label=usr_name, emoji="2️⃣", custom_id='user'),
+                create_button(
+                    style=ButtonStyle.red, label="Cancel", emoji="❌", custom_id='cancel')]
+            action_row = create_actionrow(*buttons)
+            ctx.msg = await ctx.send(content='Select the wall', embeds=[group_embed, user_embed], components=[action_row])
+            button = await wait_for_component(self.client, components=action_row, check=lambda btn_ctx: btn_ctx.author_id == ctx.author_id, timeout=120.0)
+            await button.defer(edit_origin=True)
 
-                if r.emoji == '1️⃣':
-                    await self.setup_wall(ctx, group, group_embed)
-                elif r.emoji == '2️⃣':
-                    await self.setup_wall(ctx, user, user_embed)
-                else:
-                    await ctx.msg.edit(content='❌ Cancelled', embed=None)
+            if button.custom_id == 'group':
+                await self.setup_wall(ctx, logmsg, usr, group, group_embed)
+            elif button.custom_id == 'user':
+                await self.setup_wall(ctx, logmsg, usr, user, user_embed)
+            else:
+                await ctx.msg.edit(content='❌ Cancelled', embed=None, components=[])
 
         elif not 'deactivated' in group:
-            await self.setup_wall(ctx, group, compile_wall_embed(group))
+            await self.setup_wall(ctx, logmsg, usr, group, compile_wall_embed(group))
 
         elif not 'deactivated' in user:
-            await self.setup_wall(ctx, user, compile_wall_embed(user))
+            await self.setup_wall(ctx, logmsg, usr, user, compile_wall_embed(user))
 
         else: raise VkWallBlocked
 
-    @cog_ext.cog_subcommand(name='info',
-                            base='subs',
+    @cog_ext.cog_subcommand(base='subs', name='info',
                             description='Show all Subscriptions for Channel',
                             options=[create_option(
                                 name='channel',
@@ -165,14 +195,21 @@ class Subscriptions(commands.Cog):
     @commands.bot_has_permissions(manage_webhooks=True, send_messages=True, embed_links=True, add_reactions=True, manage_messages=True, read_message_history=True)
     @commands.has_permissions(manage_webhooks=True)
     async def sub_info(self, ctx, channel=None):
-        vk_token = Server.find_by_args(ctx.guild.id).token
-        if vk_token is None:
+        logmsg = str()
+        usr, _ = self.repcog.User.find_by_args(ctx.author.id)
+        if usr is None:
+            usr, usrmsg = self.repcog.User_add(ctx.author.id)
+            logmsg += f'{usrmsg}\n'
+            self.logger.info('Add {aa}USR{aa} {tttpy}\n{msg} {ttt}'.format_map(SafeDict(msg=logmsg)))
+        token = usr.token
+        if token is None:
             raise NotAuthenticated
         if channel is None:
             channel = ctx.channel
         ctx.webhook_channel = channel
 
-        chn = Server.find_by_args(ctx.guild.id).find_channel(channel.id)
+        srv, _ = self.repcog.Server.find_by_args(ctx.guild.id)
+        chn, _ = srv.find_channel(channel.id)
         if chn is None:
             raise NoSubs
         elif len(chn.subscriptions) == 0:
@@ -191,48 +228,38 @@ class Subscriptions(commands.Cog):
         table.set_cols_dtype(['t','t','t','i','t'])
         table.set_chars(['─','│','┼','─'])
 
-        groups, users = '', ''
-        added_by_groups, added_by_users = [], []
-        for sub in subs:
-            if sub.wall_type == 'g':
-                groups += f"{sub.wall_id},"
-                added_by_groups.append(sub.added_by)
+        pool = AsyncVkExecuteRequestPool()
+        walls = list()
+        async with AsyncVkExecuteRequestPool() as pool:
+            for sub in subs:
+                if sub.wall.id < 0:
+                    walls.append({
+                        'subObject': sub, 'resp': pool.add_call('groups.getById', sub.user.token, {'group_ids': abs(sub.wall.id)})})
+                else:
+                    walls.append({
+                        'subObject': sub, 'resp': pool.add_call('users.get', sub.user.token, {'user_ids': sub.wall.id, 'fields': 'screen_name'})})
+        
+        for wall in walls:
+            sub = wall['subObject']
+            resp = wall['resp'].result[0]
+
+            if sub.wall.id < 0:
+                wall_type = 'Group'
             else:
-                users += f"{sub.wall_id},"
-                added_by_users.append(sub.added_by)
-        async with aiovk.TokenSession(vk_token) as ses:
-            vkapi = aiovk.API(ses)
-            if groups != '':
-                resp_groups = await vkapi.groups.getById(group_ids=groups, v='5.130')
+                resp['name'] = f"{resp['first_name']} {resp['last_name']}"
+                wall_type = 'User'
+            added_by = self.client.get_user(sub.user.id)
 
-                for wall, added_by in zip(resp_groups, added_by_groups):
-                    name = f"{wall['name']}"
-                    added_by = self.client.get_user(added_by)
-
-                    table.add_row([name, wall['screen_name'], 'Group', wall['id'], f'{added_by.name}#{added_by.discriminator}'])
-                    embed.add_field(
-                        name = name,
-                        value = f"Short address: `{wall['screen_name']}`\nType: `Group`\nID: `{wall['id']}`\nAdded by: {added_by.mention}",
-                        inline = True
-                    )
-            if users != '':
-                r_users = await vkapi.users.get(user_ids=users, fields='screen_name', v='5.130')
-
-                for wall, added_by in zip(r_users, added_by_users):
-                    name = f"{wall['first_name']} {wall['last_name']}"
-                    added_by = self.client.get_user(added_by)
-
-                    table.add_row([name, wall['screen_name'], 'User', wall['id'], f'{added_by.name}#{added_by.discriminator}'])
-                    embed.add_field(
-                        name = name,
-                        value = f"Short address: `{wall['screen_name']}`\nType: `User`\nID: `{wall['id']}`\nAdded by: {added_by.mention}",
-                        inline = True
-                    )
+            table.add_row([resp['name'], resp['screen_name'], wall_type, resp['id'], f'{added_by.name}#{added_by.discriminator}'])
+            embed.add_field(
+                name = resp['name'],
+                value = f"Short address: `{resp['screen_name']}`\nType: `{wall_type}`\nID: `{resp['id']}`\nAdded by: {added_by.mention}",
+                inline = True
+            )
 
         await ctx.send(f"**Wall subscriptions for **{channel.mention}** channel:**\n```{table.draw()}```", embed=embed)
 
-    @cog_ext.cog_subcommand(name='del',
-                            base='subs',
+    @cog_ext.cog_subcommand(base='subs', name='del',
                             description='Unsubscribe Channel from VK Wall',
                             options=[create_option(
                                 name='wall_id',
@@ -249,8 +276,13 @@ class Subscriptions(commands.Cog):
     @commands.bot_has_permissions(manage_webhooks=True, send_messages=True, embed_links=True, add_reactions=True, manage_messages=True, read_message_history=True)
     @commands.has_permissions(manage_webhooks=True)
     async def sub_del(self, ctx, wall_id, channel=None):
-        vk_token = Server.find_by_args(ctx.guild.id).token
-        if vk_token == None:
+        logmsg = str()
+        usr, usrmsg = self.repcog.User.find_by_args(ctx.author.id)
+        if usr is None:
+            usr, usrmsg = self.repcog.User_add(ctx.author.id)
+        logmsg += f'{usrmsg}\n'
+        token = usr.token
+        if token is None:
             raise NotAuthenticated
         if wall_id.startswith('<') and wall_id.endswith('>'):
             raise WallIdBadArgument
@@ -259,12 +291,14 @@ class Subscriptions(commands.Cog):
         if channel is None:
             channel = ctx.channel
         ctx.webhook_channel = channel
-        chn = Server.find_by_args(ctx.guild.id).find_channel(channel.id)
+        
+        srv, srvmsg = self.repcog.Server.find_by_args(ctx.guild.id)
+        chn, chnmsg = srv.find_channel(channel.id)
         if chn is None:
             raise NotSub
 
 
-        async with aiovk.TokenSession(vk_token) as ses:
+        async with aiovk.TokenSession(token) as ses:
             vkapi = aiovk.API(ses)
 
             try:
@@ -280,168 +314,206 @@ class Subscriptions(commands.Cog):
                     user = {'deactivated': True}
 
         if (not 'deactivated' in group) and (not 'deactivated' in user):
-            subs = chn.find_subs(group['id'])
-            if len(subs) == 0: raise NotSub
+            subs, _ = chn.find_subs(group['id'])
+            if len(subs) == 0:
+                raise NotSub
 
             elif len(subs) == 2:
                 group_embed = compile_wall_embed(group)
                 user_embed = compile_wall_embed(user)
 
-                ctx.msg = await ctx.send(content='React with\n\t:one: for **first** wall,\n\t:two: for **second** wall,\n\t❌ for cancel.', embeds=[group_embed, user_embed])
-                for emoji in ['1️⃣', '2️⃣', '❌']:
-                    await ctx.msg.add_reaction(emoji)
-                
-                try:
-                    r, u = await self.client.wait_for('reaction_add', check=lambda r, u: u == ctx.author and r.message.id == ctx.msg.id and r.emoji in ['1️⃣', '❌', '2️⃣'], timeout=120.0)
-                except asyncio.TimeoutError:
-                    await ctx.msg.clear_reactions()
-                    await ctx.msg.edit(content='❌ Cancelled (timeout)', embed=None)
+                if len(group['name']) > 25:
+                    grp_name = f"{group['name'][:24]}…"
+                usr_name = f"{user['first_name']} {user['last_name']}"
+                if len(usr_name) > 25:
+                    usr_name = f"{usr_name[:24]}…"
+
+                buttons = [create_button(
+                        style=ButtonStyle.blue, label=grp_name, emoji="1️⃣", custom_id='group'),
+                    create_button(
+                        style=ButtonStyle.blue, label=usr_name, emoji="2️⃣", custom_id='user'),
+                    create_button(
+                        style=ButtonStyle.red, label="Cancel", emoji="❌", custom_id='cancel')]
+                action_row = create_actionrow(*buttons)
+                ctx.msg = await ctx.send(content='Select the wall', embeds=[group_embed, user_embed], components=[action_row])
+                button = await wait_for_component(self.client, components=action_row, check=lambda btn_ctx: btn_ctx.author_id == ctx.author_id, timeout=120.0)
+                await button.defer(edit_origin=True)
+
+                if button.custom_id == 'group':
+                    await self.setup_wall(ctx, logmsg, usr, group, group_embed)
+                elif button.custom_id == 'user':
+                    await self.setup_wall(ctx, logmsg, usr, user, user_embed)
                 else:
-                    await ctx.msg.clear_reactions()
-
-                    if r.emoji == '1️⃣':
-                        await self.setup_wall(ctx, group, group_embed)
-
-                    elif r.emoji == '2️⃣':
-                        await self.setup_wall(ctx, user, user_embed)
-
-                    else:
-                        await ctx.msg.edit(content='❌ Cancelled', embed=None)
+                    await ctx.msg.edit(content='❌ Cancelled', embed=None, components=[])
             
             elif len(subs) == 1:
-                if subs[0].wall_type == 'g':
-                    await self.setup_wall(ctx, group, compile_wall_embed(group))
-                elif subs[0].wall_type == 'u': 
-                    await self.setup_wall(ctx, user, compile_wall_embed(user))
+                if subs[0].wall.id < 0:
+                    await self.setup_wall(ctx, logmsg, usr, group, compile_wall_embed(group))
+                else: 
+                    await self.setup_wall(ctx, logmsg, usr, user, compile_wall_embed(user))
 
         elif not 'deactivated' in group:
             subs = chn.find_subs(group['id'])
             if len(subs) == 0:
                 raise NotSub
 
-            await self.setup_wall(ctx, group, compile_wall_embed(group))
+            await self.setup_wall(ctx, logmsg, usr, group, compile_wall_embed(group))
 
         elif not 'deactivated' in user:
-            subs = chn.find_subs(group['id'])
-            if len(subs) == 0: raise NotSub
+            subs = chn.find_subs(user['id'])
+            if len(subs) == 0:
+                raise NotSub
 
-            await self.setup_wall(ctx, user, compile_wall_embed(user))
+            await self.setup_wall(ctx, logmsg, usr, user, compile_wall_embed(user))
 
         else: raise VkWallBlocked
 
-    @cog_ext.cog_subcommand(name='account',
-                            base='subs',
-                            description='Show VK Account linked to this Server',
+    @cog_ext.cog_subcommand(base='subs', name='account',
+                            description='Show VK Account you are logged in',
                             guild_ids=None if sets['version'] == 'MAIN' else [sets['srvcSrv']])
     @commands.bot_has_permissions(manage_webhooks=True, send_messages=True, embed_links=True, add_reactions=True, manage_messages=True, read_message_history=True)
     @commands.has_permissions(administrator=True)
     async def account(self, ctx):
-        vk_token = Server.find_by_args(ctx.guild.id).token
-        if vk_token is None:
+        logmsg = str()
+        usr, _ = self.repcog.User.find_by_args(ctx.author.id)
+        if usr is None:
+            usr, usrmsg = self.repcog.User_add(ctx.author.id)
+            logmsg += f'{usrmsg}\n'
+            self.logger.info('Add {aa}USR{aa} {tttpy}\n{msg} {ttt}'.format_map(SafeDict(msg=logmsg)))
+        token = usr.token
+        if token is None:
             raise NotAuthenticated
 
 
-        async with aiovk.TokenSession(vk_token) as ses:
+        async with aiovk.TokenSession(token) as ses:
             vkapi = aiovk.API(ses)
             user_embed = compile_wall_embed((await vkapi.users.get(fields=self.user_fields, v='5.130'))[0])
-        await ctx.send(f'**{ctx.guild.name}** is linked to this account.\nYou can change it with `/subs link` command.', embed=user_embed)
+        await ctx.send(f'You are logged in **{ctx.guild.name}** is linked to this account.\nYou can change it with `/subs link` command.', embed=user_embed)
 
-    @cog_ext.cog_subcommand(name='link',
-                            base='subs',
-                            description='Link this Server to your VK Account',
+    @cog_ext.cog_subcommand(base='subs', name='link',
+                            description='Login to your VK Account',
                             guild_ids=None if sets['version'] == 'MAIN' else [sets['srvcSrv']])
     @commands.bot_has_permissions(manage_webhooks=True, send_messages=True, embed_links=True, add_reactions=True, manage_messages=True, read_message_history=True)
     @commands.has_permissions(administrator=True)
     async def link(self, ctx):
+        logmsg = str()
+        usr, _ = self.repcog.User.find_by_args(ctx.author.id)
+        if usr is None:
+            usr, usrmsg = self.repcog.User_add(ctx.author.id)
+            logmsg += f'{usrmsg}\n'
+            self.logger.info('Add {aa}USR{aa} {tttpy}\n{msg} {ttt}'.format_map(SafeDict(msg=logmsg)))
+
+        ctx.msg = await ctx.send('Check your DM for login link')
+
         key = Fernet.generate_key().decode("utf-8")
-        embed = discord.Embed(
-            title = 'Authentication',
-            url = f'{sets["url"]}/oauth2/login?key={key}',
-            description = 'Follow the link to authenticate with your VK profile to be able to use **WallPost VK**.',
-            color = sets["embedColor"]
-        )
-        embed.set_thumbnail(url=vk['photo'])
-        embed.set_footer(text=vk['name'], icon_url=vk['photo'])
-
-        ctx.msg = await ctx.send('Check your DM for an authentication link!')
-        Server.temp_data.append({"key": key, "server_id": ctx.guild.id, "chn_id": ctx.channel.id, "msg_id": ctx.msg.id})
-        await ctx.author.send(embed=embed)
+        self.repcog.User.auth_data.append({"key": key, "usr_id": usr.id, "chn_id": ctx.channel.id, "msg_id": ctx.msg.id})
+        buttons = [create_button(
+            style=ButtonStyle.URL, label='Login', url=f'{sets["url"]}/oauth2/login?key={key}')]
+        action_row = create_actionrow(*buttons)
+        await ctx.author.send(content='Follow the link to login to your VK profile', components=[action_row])
 
 
-    async def setup_wall(self, ctx, wall, embed):
+    async def setup_wall(self, ctx, logmsg, usr, resp, embed):
+        buttons = [create_button(
+                style=ButtonStyle.green, emoji="✅", custom_id='yes'),
+            create_button(
+                style=ButtonStyle.red, emoji="❌", custom_id='no')]
+        action_row = create_actionrow(*buttons)
         if hasattr(ctx, 'msg'):
-            await ctx.msg.edit(content='Is this the wall you requested?\nReact with ✅ or ❌', embed=embed)
+            await ctx.msg.edit(content='Is this the wall you requested?', embed=embed, components=[action_row])
         else:
-            ctx.msg = await ctx.send(content='Is this the wall you requested?\nReact with ✅ or ❌', embed=embed)
+            ctx.msg = await ctx.send(content='Is this the wall you requested?', embed=embed, components=[action_row])
+        button = await wait_for_component(self.client, components=action_row, check=lambda btn_ctx: btn_ctx.author_id == ctx.author_id, timeout=120.0)
+        await button.defer(edit_origin=True)
 
-        for emoji in ['✅', '❌']:
-            await ctx.msg.add_reaction(emoji)
+        if button.custom_id == 'yes':
+            if 'name' in resp:
+                if not resp['is_closed'] == 0 and resp['is_member'] == 0:
+                    raise WallClosed
+                name = resp['name']
+                resp['id'] = -resp['id']
+            else:
+                if resp['can_access_closed'] == False:
+                    raise WallClosed
+                name = f'{resp["first_name"]} {resp["last_name"]}'
+            
+            srv, srvmsg = self.repcog.Server.find_by_args(ctx.guild.id)
+            logmsg += f'{srvmsg}\n'
+            chn, chnmsg = srv.find_channel(ctx.webhook_channel.id)
+            if ctx.subcommand_name == 'add':
+                if chn is None:
+                    chn, chnmsg = await srv.Channel_add(ctx.webhook_channel)
+                logmsg += f'\t{chnmsg}\n'
+                subs, _ = chn.find_subs(resp['id'], True)
+                if len(subs) == 0:
+                    wall, wallmsg = self.repcog.Wall.find_by_args(resp['id'])
+                    if wall is None:
+                        wall, wallmsg = await self.repcog.Wall_add(resp['id'])
+                    
+                    buttons = [create_button(
+                            style=ButtonStyle.green, emoji="✅", custom_id='yes'),
+                        create_button(
+                            style=ButtonStyle.red, emoji="❌", custom_id='no')]
+                    action_row = create_actionrow(*buttons)
+                    await ctx.msg.edit(content=f'Would you like to set a message to be sent with new posts?', components=[action_row], embed=None)
+                    button = await wait_for_component(self.client, components=action_row, check=lambda btn_ctx: btn_ctx.author_id == ctx.author_id, timeout=120.0)
+                    await button.defer(edit_origin=True)
 
-        try:
-            r, u = await self.client.wait_for('reaction_add', check=lambda r, u: u == ctx.author and r.message.id == ctx.msg.id and r.emoji in ['✅', '❌'], timeout=120.0)
-        except asyncio.TimeoutError:
-            await ctx.msg.clear_reactions()
-            await ctx.msg.edit(content='❌ Cancelled (timeout)', embed=None)
-        else:
-            await ctx.msg.clear_reactions()
-
-            if r.emoji == '✅':
-                if 'name' in wall:
-                    if not wall['is_closed'] == 0 and wall['is_member'] == 0:
-                        raise WallClosed
-                    name = wall['name']
-                    wall_type = 'g'
+                    if button.custom_id == 'yes':
+                        await ctx.msg.edit(content=f'Reply with the text you want to be in the notification message (255 chars max)', components=[], embed=None)
+                        m = await self.client.wait_for('message', check=
+                            lambda m: m.reference is not None and m.reference.message_id == ctx.msg.id and m.author.id == ctx.author.id, timeout=120.0)
+                        msg = m.content
+                        if len(msg) > 255:
+                            raise MsgTooLong
+                        await m.delete()
+                    else:
+                        msg = None
+                    
+                    sub, submsg = await chn.Subscription_add(wall, usr, msg)
+                    logmsg += f'\t\t{submsg}\n{wallmsg}\n'
                 else:
-                    if wall['can_access_closed'] == False:
-                        raise WallClosed
-                    name = f'{wall["first_name"]} {wall["last_name"]}'
-                    wall_type = 'u'
-                
-                if ctx.subcommand_name == 'add':
-                    _channel = Server.find_by_args(ctx.guild.id).find_channel(ctx.webhook_channel.id)
-                    long_poll = False
-                    # if wall == 'g':
-                    #     if wall['is_admin'] == 1:
-                    #         if wall['admin_level'] == 3:
-                    #             await ctx.send(f'You are the administrator of **{name}**. You can enable \"long-poll\" reposting.\nThis means bla bla bla WIP')
-                                # vkapi.groups.setLongPollSettings(enabled=1, wall_post_new=1, v='5.130')
-                                # long_poll = True
-                    if _channel is None:
-                        _channel = await Channel.add(Server.find_by_args(ctx.guild.id), ctx.webhook_channel, {
-                            'wall_id': wall['id'], 'wall_type': wall_type, 'last_id': 0, 'token': None, 'added_by': ctx.author.id})
-                    elif _channel.find_subs(wall['id'], wall_type) is None:
-                        _sub = await Subscription.add(_channel, {
-                            'wall_id': wall['id'], 'wall_type': wall_type, 'last_id': 0, 'token': None, 'added_by': ctx.author.id})
-                        
-                    else: raise SubExists
+                    raise SubExists
+                await ctx.msg.edit(content=f'✅ Successfully subscribed {ctx.webhook_channel.mention} to **{name}** wall!', components=[], embed=None)
+                self.logger.info('Add {aa}SUB{aa} {tttpy}\n{msg} {ttt}'.format_map(SafeDict(msg=logmsg)))
 
-                    await ctx.msg.edit(content=f'✅ Successfully subscribed {ctx.webhook_channel.mention} to **{name}** wall!', embed=None)
+            elif ctx.subcommand_name == 'del':
+                if len(chn.subscriptions) == 1:
+                    chnmsg = await chn.delete()
+                    logmsg += f'\t{chnmsg}\n'
+                else:
+                    logmsg += f'\t{chnmsg}\n'
+                    sub, submsg = chn.find_subs(resp['id'], wall_type=True)
+                    logmsg += f'\t\t{submsg}\n'
+                    await sub[0].delete()
 
-                if ctx.subcommand_name == 'del':
-                    await Server.find_by_args(ctx.guild.id).find_channel(ctx.webhook_channel.id).find_subs(wall['id'], wall_type).delete()
+                wall, wallmsg = self.repcog.Wall.find_by_args(resp['id'])
+                if len(wall.subscriptions) == 0:
+                    wallmsg = await wall.delete()
+                logmsg += f'{wallmsg}\n'
+                await ctx.msg.edit(content=f'✅ Successfully unsubscrubed {ctx.webhook_channel.mention} from **{name}** wall!', components=[], embed=None)
+                self.logger.info('Del {aa}SUB{aa} {tttpy}\n{msg} {ttt}'.format_map(SafeDict(msg=logmsg)))
 
-                    await ctx.msg.edit(content=f'✅ Successfully unsubscrubed {ctx.webhook_channel.mention} from **{name}** wall!', embed=None)
-
-            elif r.emoji == '❌':
-                await ctx.msg.edit(content='❌ Cancelled', embed=None)
+        else:
+            await ctx.msg.edit(content='❌ Cancelled', embed=None, components=[])
 
     @ipc.server.route()
     async def authentication(self, data):
         try:
-            temp_data = list(filter(lambda temp_data: temp_data['key'] == data.key, Server.temp_data))[0]
+            auth_data = list(filter(lambda auth_data: auth_data['key'] == data.key, self.repcog.User.auth_data))[0]
         except IndexError:
             return "This link has been expired. Get a new one with `/subs link` command."
 
-        server = Server.find_by_args(temp_data['server_id'])
-        await server.set_token(data.token)
+        usr, _ = self.repcog.User.find_by_args(auth_data['usr_id'])
+        await usr.set_token(data.token)
 
-        async with aiovk.TokenSession(server.token) as ses:
+        async with aiovk.TokenSession(usr.token) as ses:
             vkapi = aiovk.API(ses)
             user = (await vkapi.users.get(fields=self.user_fields, v='5.130'))[0]
-        msg = self.client.get_channel(temp_data["chn_id"]).get_partial_message(temp_data['msg_id'])
-        await msg.edit(content=f"**{self.client.get_guild(server.id).name}** is now linked to this account.\nYou can change it with `/subs link` command.", embed=compile_wall_embed(user))
+        msg = self.client.get_channel(auth_data["chn_id"]).get_partial_message(auth_data['msg_id'])
+        await msg.edit(content=f"Your profile is now linked to this account.\nYou can change it with `/subs link` command.", embed=compile_wall_embed(user))
 
-        Server.temp_data.remove(temp_data)
+        self.repcog.User.auth_data.remove(auth_data)
 
         return 'Your account is now bound to the server. You can now close this tab.'
 

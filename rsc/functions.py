@@ -80,14 +80,20 @@ def compile_post_embed(post, wall1=None):
             color = sets["embedColor"]
         )
         if items['owner_id'] > 0:
-            author = post['profiles'][0]
+            for profile in post['profiles']:
+                if profile['id'] == items['from_id']:
+                    author = profile
+                    break
             embed.set_author(
             name = f'{author["first_name"]} {author["last_name"]}',
             url = f'https://vk.com/id{author["id"]}',
             icon_url = author['photo_max']
             )
         else:
-            author = post['groups'][0] 
+            for group in post['groups']:
+                if group['id'] == -items['from_id']:
+                    author = group
+                    break
             embed.set_author(
             name = author['name'],
             url = f'https://vk.com/club{author["id"]}',

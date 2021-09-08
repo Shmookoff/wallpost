@@ -8,12 +8,10 @@ import aiohttp
 
 import os
 import traceback
-import sys
 import logging
-import re
 
 from rsc.config import sets
-from rsc.classes import Server, WPLoggerAdapter, WPLogger, SafeDict
+from rsc.classes import WPLoggerAdapter, WPLogger, SafeDict
 
 
 class WallPost(commands.Bot):
@@ -27,7 +25,6 @@ class WallPost(commands.Bot):
         self.logger = WPLoggerAdapter(WPLogger(self.loop), {'tb': ''})
         self.ipc = ipc.Server(self, secret_key=sets['ipcSecretKey'])
         self.slash = SlashCommand(self, sync_commands=True, sync_on_cog_reload=True)
-        Server.client = self
 
         self.cogs_msg = '\nLoad COGs'
         try: self.load_extension('app.cogs.handler')
@@ -44,6 +41,7 @@ class WallPost(commands.Bot):
 
     async def on_ready(self):
         self.logger.logger.add_discord_handler(logging.INFO, self.get_channel(sets['logChnId']))
+        self.logger.logger.add_discord_handler(logging.ERROR, self.get_channel(sets['errorChnId']))
         self.ping_server.start()
 
         self.init_msg = "INIT {aa}{name}{aa} {tttpy}\nLogged on as {user}"
@@ -84,10 +82,15 @@ class WallPost(commands.Bot):
         self.logger.info("IPC is ready!")
 
     async def on_guild_join(self, guild):
-        await Server.add((guild.id))
+        repost_cog = self.get_cog('Repost')
+        srv, logmsg = await repost_cog.Server_add((guild.id))
+        self.logger.info('Add {aa}SRV{aa} {tttpy}\n{msg} {ttt}'.format_map(SafeDict(msg=logmsg)))
 
     async def on_guild_remove(self, guild):
-        await Server.find_by_args(guild.id).delete()
+        repost_cog = self.get_cog('Repost')
+        srv, _ = repost_cog.Server.find_by_args(guild.id)
+        logmsg = await srv.delete()
+        self.logger.info('Del {aa}SRV{aa} {tttpy}\n{msg} {ttt}'.format_map(SafeDict(msg=logmsg)))
 
     async def on_error(self, event, *args, **kwargs):
         await self.error_handler('general', event=event)
@@ -103,10 +106,11 @@ class WallPost(commands.Bot):
                     cmnd_name = f'/{kwargs["ctx"].name}{" "+kwargs["ctx"].subcommand_name if kwargs["ctx"].subcommand_name is not None else ""}'
                 elif raised == 'command':
                     cmnd_name = f'.{kwargs["ctx"].command}'
-                print(kwargs["ctx"].kwargs)
                 msg = 'Ignoring exception in {t}{cmnd_name}{t} {aa}COMMAND{aa}:\nParams: {t}{kwargs}{t}'.format_map(SafeDict(cmnd_name=cmnd_name, kwargs=str(kwargs["ctx"].kwargs).replace('{', '(').replace('}', ')')))
             elif raised == 'endpoint':
                 msg = 'Ignoring exception in {t}{endpoint}{t} {aa}IPC ENDPOINT{aa}:'.format_map(SafeDict(endpoint=kwargs["endpoint"]))
+            elif raised == 'repost_task':
+                msg = 'Ignoring exception in {aa}USER{aa} {t}"repost_task"{t}:\n{t}{usr}{t}'.format_map(SafeDict(usr=kwargs["usr"]))
         self.logger.error(msg, tb=tb)
 
     @tasks.loop(minutes=15.0)

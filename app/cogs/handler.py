@@ -1,6 +1,7 @@
 import discord
 from discord.ext import commands
 
+import asyncio.exceptions as asycnio_exceptions
 import discord_slash.error as slash_errors
 import aiovk.exceptions as aiovk_errors
 
@@ -13,20 +14,20 @@ class ExceptionHandler(commands.Cog):
     __name__ = 'Exception Handler'
 
     def __init__(self, client):
-        msg = f'Load COG {self.__name__}'
-        if hasattr(client, 'cogs_msg'):
-            client.cogs_msg += f'\n\t{msg}'
-        else:
-            client.logger.info(msg)
-
         self.client = client
+
+        msg = f'Load COG {self.__name__}'
+        if hasattr(self.client, 'cogs_msg'):
+            self.client.cogs_msg += f'\n\t{msg}'
+        else:
+            self.client.logger.info(msg)
 
     def cog_unload(self):
         msg = f'Unload COG {self.__name__}'
-        if hasattr(client, 'cogs_msg'):
-            client.cogs_msg += f'\n\t{msg}'
+        if hasattr(self.client, 'cogs_msg'):
+            self.client.cogs_msg += f'\n\t{msg}'
         else:
-            client.logger.info(msg)
+            self.client.logger.info(msg)
 
 
     @commands.Cog.listener()
@@ -45,6 +46,11 @@ class ExceptionHandler(commands.Cog):
     @commands.Cog.listener()
     async def on_slash_command_error(self, ctx, exc):
         if ctx.name == 'subs':
+            if isinstance(exc, asycnio_exceptions.TimeoutError):
+                await ctx.msg.clear_reactions()
+                await ctx.msg.edit(content='❌ Cancelled (timeout)', components=[], embed=None)
+                return
+
             if ctx.subcommand_name == 'account':
                 pass
             elif ctx.subcommand_name == 'link':
@@ -56,6 +62,8 @@ class ExceptionHandler(commands.Cog):
                     exc.embed = set_error_embed(f'Wall is closed\n\n> Your VK account doesn\'t have access to wall **{ctx.kwargs["wall_id"]}**.')
                 elif isinstance(exc, SubExists):
                     exc.embed = set_error_embed(f'{ctx.webhook_channel.mention} is already subscribed to wall **{ctx.kwargs["wall_id"]}**.')
+                elif isinstance(exc, MsgTooLong):
+                    exc.embed = set_error_embed(f'Message is too long.')
             elif ctx.subcommand_name == 'info':
                 if isinstance(exc, NoSubs):
                     exc.embed = set_error_embed(f'{ctx.webhook_channel.mention} doesn\'t have any subscriptions.')

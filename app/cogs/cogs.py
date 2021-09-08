@@ -23,23 +23,26 @@ class Cogs(commands.Cog):
                 ), create_choice(
                     value='handler',
                     name='Exception Handler'
+                ), create_choice(
+                    value='repost',
+                    name='Repost Handler'
                 )]
 
     def __init__(self, client):
-        msg = f'Load COG {self.__name__}'
-        if hasattr(client, 'cogs_msg'):
-            client.cogs_msg += f'\n\t{msg}'
-        else:
-            client.logger.info(msg)
-
         self.client = client
+
+        msg = f'Load COG {self.__name__}'
+        if hasattr(self.client, 'cogs_msg'):
+            self.client.cogs_msg += f'\n\t{msg}'
+        else:
+            self.client.logger.info(msg)
 
     def cog_unload(self):
         msg = f'Unload COG {self.__name__}'
-        if hasattr(client, 'cogs_msg'):
-            client.cogs_msg += f'\n\t{msg}'
+        if hasattr(self.client, 'cogs_msg'):
+            self.client.cogs_msg += f'\n\t{msg}'
         else:
-            client.logger.info(msg)
+            self.client.logger.info(msg)
 
 
     @cog_ext.cog_subcommand(name='list',
