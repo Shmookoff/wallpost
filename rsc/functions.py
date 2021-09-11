@@ -14,7 +14,7 @@ from rsc.config import sets, vk_sets
 async def get_vk_info():
     async with aiovk.TokenSession(vk_sets["serviceKey"]) as ses:
         vkapi = aiovk.API(ses)
-        vk_info = await vkapi.groups.getById(group_id=22822305, v='5.130')
+        vk_info = await vkapi.groups.getById(group_id=22822305, v='5.84')
     return {'name': vk_info[0]['name'], 'photo': vk_info[0]['photo_200']}
 vk = asyncio.get_event_loop().run_until_complete(get_vk_info())
 
@@ -69,19 +69,19 @@ def compile_wall_embed(wall):
     )
     return embed
 
-def compile_post_embed(post, wall1=None):
+def compile_post_embed(resp, wall1=None):
     if wall1 is None:
-        items = post['items'][0]
+        post = resp['items'][0]
         embed = discord.Embed(
             title = sets["embedTitle"],
-            url = f'https://vk.com/wall{items["from_id"]}_{items["id"]}',
-            description = items['text'],
-            timestamp = datetime.utcfromtimestamp(items['date']),
+            url = f'https://vk.com/wall{post["owner_id"]}_{post["id"]}',
+            description = post['text'],
+            timestamp = datetime.utcfromtimestamp(post['date']),
             color = sets["embedColor"]
         )
-        if items['owner_id'] > 0:
-            for profile in post['profiles']:
-                if profile['id'] == items['from_id']:
+        if post['owner_id'] > 0:
+            for profile in resp['profiles']:
+                if profile['id'] == post['owner_id']:
                     author = profile
                     break
             embed.set_author(
@@ -90,8 +90,8 @@ def compile_post_embed(post, wall1=None):
             icon_url = author['photo_max']
             )
         else:
-            for group in post['groups']:
-                if group['id'] == -items['from_id']:
+            for group in resp['groups']:
+                if group['id'] == -post['owner_id']:
                     author = group
                     break
             embed.set_author(
@@ -100,12 +100,12 @@ def compile_post_embed(post, wall1=None):
             icon_url = author['photo_max']
             )
     else:
-        items = post
+        post = resp
         embed = discord.Embed(
             title = sets["embedTitle"],
-            url = f'https://vk.com/wall{items["from_id"]}_{items["id"]}',
-            description = items['text'],
-            timestamp = datetime.utcfromtimestamp(items['date']),
+            url = f'https://vk.com/wall{post["owner_id"]}_{post["id"]}',
+            description = post['text'],
+            timestamp = datetime.utcfromtimestamp(post['date']),
             color = sets["embedColor"]
         )
         embed.set_author(
@@ -115,8 +115,8 @@ def compile_post_embed(post, wall1=None):
         )
     
     has_photo = False
-    if 'attachments' in items:
-        for attachment in items['attachments']:
+    if 'attachments' in post:
+        for attachment in post['attachments']:
             if attachment['type'] == 'photo':
                 has_photo = True
                 hw = 0
@@ -128,18 +128,18 @@ def compile_post_embed(post, wall1=None):
                 embed.set_image(url = image_url)
                 break
 
-    if 'copy_history' in items: 
-        copy = items['copy_history'][0]
+    if 'copy_history' in post: 
+        copy = post['copy_history'][0]
 
         if copy['text'] != '':
             embed.add_field(
                 name = '↪️ Repost',
-                value = f'[**Open repost**](https://vk.com/wall{copy["from_id"]}_{copy["id"]})\n>>> {copy["text"]}'
+                value = f'[**Open repost**](https://vk.com/wall{copy["owner_id"]}_{copy["id"]})\n>>> {copy["text"]}'
             )
         else:
             embed.add_field(
                 name = '↪️ Repost',
-                value = f'[**Open repost**](https://vk.com/wall{copy["from_id"]}_{copy["id"]})'
+                value = f'[**Open repost**](https://vk.com/wall{copy["owner_id"]}_{copy["id"]})'
             )
         
         if not has_photo:

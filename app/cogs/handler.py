@@ -82,8 +82,8 @@ class ExceptionHandler(commands.Cog):
             elif isinstance(exc, WallIdBadArgument):
                 exc.embed = set_error_embed(f'VK Wall ID is invalid.\n\n>>> **{ctx.kwargs["wall_id"]}** isn\'t a valid VK Wall ID.\nPlease, specify `[wall_id]` as **String**')
                 exc.command_and_example = True
-            elif isinstance(exc, VkWallBlocked):
-                exc.embed = set_error_embed(f'Can\'t gain access to this Wall.\n\n> Wall **{ctx.kwargs["wall_id"]}** may be blocked, deactivated, deleted or it may not exist.')
+            elif isinstance(exc, CouldNotFindWall):
+                exc.embed = set_error_embed(f'Couldn\'t find this Wall.\n\nGroup search:\n> {exc.grp_msg}\nUser search:\n> {exc.usr_msg}')
             elif isinstance(exc, commands.BotMissingPermissions):
                 exc.embed = set_error_embed(f'Bot is missing permission(s).\n\n> {exc}')
             elif isinstance(exc, commands.MissingPermissions):
@@ -94,7 +94,7 @@ class ExceptionHandler(commands.Cog):
                 add_command_and_example(ctx, exc.embed)
 
             if hasattr(ctx, 'msg'):
-                await ctx.msg.edit(content=None, embed=exc.embed)
+                await ctx.msg.edit(content=None, embed=exc.embed, components=[])
             else:
                 await ctx.send(embed=exc.embed)
         else:

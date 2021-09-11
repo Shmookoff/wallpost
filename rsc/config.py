@@ -2,8 +2,10 @@ import os
 import json
 import asyncio
 import platform
+from aiovk.sessions import TokenSession
 from dotenv import load_dotenv
 
+TokenSession.API_VERSION = '5.84'
 
 load_dotenv()
 envar = json.loads(os.environ.get("WALLPOST"))

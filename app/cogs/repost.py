@@ -42,8 +42,8 @@ class Repost(commands.Cog):
         msg = f'Init {wall}'
         return wall, msg
         
-    async def Wall_add(self, id_):
-        wall = Repost.Wall(self, id_, True, 0)
+    async def Wall_add(self, id_, last_id):
+        wall = Repost.Wall(self, id_, True, last_id)
         msg = f'Add {wall}'
         async with aiopg.connect(sets["psqlUri"]) as conn:
             async with conn.cursor(cursor_factory=DictCursor) as cur:
@@ -124,6 +124,7 @@ class Repost(commands.Cog):
             self.subscriptions = set()
 
             Repost.User.all_.add(self)
+            self.sleep_on_error = 30
             self.repost_task.start()
 
         def __str__(self):
@@ -162,7 +163,7 @@ class Repost(commands.Cog):
             # Req for posts
             for wall_id in self.task_walls:
                 self.task_walls[wall_id]['req'] = self.vk_pool.add_call('wall.get', self.token, {
-                    'owner_id': wall_id, 'extended': 1, 'count': 1, 'fields': 'photo_max', 'v': '5.130'})
+                    'owner_id': wall_id, 'extended': 1, 'count': 1, 'fields': 'photo_max', 'v': '5.84'})
             await self.vk_pool.execute()
             # Offset req for pinned posts
             for wall_id in self.task_walls:
@@ -170,7 +171,7 @@ class Repost(commands.Cog):
                 if len(resp['items']) > 0:
                     if resp['items'][0].get('is_pinned', False):
                         self.task_walls[wall_id]['req'] = self.vk_pool.add_call('wall.get', self.token, {
-                            'owner_id': wall_id, 'extended': 1, 'offset': 1, 'count': 1, 'fields': 'photo_max', 'v': '5.130'})
+                            'owner_id': wall_id, 'extended': 1, 'offset': 1, 'count': 1, 'fields': 'photo_max', 'v': '5.84'})
             await self.vk_pool.execute()
             # Disable empty walls
             for wall_id in self.task_walls:
@@ -184,26 +185,29 @@ class Repost(commands.Cog):
                     # If post is new
                     if self.task_walls[wall_id]['wall'].last_id != resp['items'][0]['id']:
                         new_post = True
-                        msg += f'\t{self.task_walls[wall_id]["wall"]}\n'
                         post_embed = compile_post_embed(resp)
-                        async with ClientSession() as session:
-                            for sub in self.task_walls[wall_id]['subs']:
+                        for sub in self.task_walls[wall_id]['subs']:
+                                dc_chn = self.cog.client.get_channel(sub.channel.id)
                                 try:
-                                    wh = discord.Webhook.from_url(url=sub.channel.webhook_url, adapter=discord.AsyncWebhookAdapter(session))
-                                    await wh.send(content=sub.msg, embed=post_embed)
-                                except discord_errors.NotFound as exc:
-                                    try:
-                                        await sub.channel.delete()
-                                    except discord_errors.NotFound as exc:
+                                    await dc_chn.send(content=sub.msg, embed=post_embed)
+                                except Exception as exc:
+                                    if isinstance(exc, AttributeError):
                                         pass
+                                    elif isinstance(exc, discord_errors.Forbidden):
+                                        pass
+                                    else:
+                                        raise
                                 else:
                                     msg += f'\t\t{sub}\n'
-                            # walls[wall_id]['wall'].last_id = resp['items'][0]['id']
-                            # async with aiopg.connect(sets["psqlUri"]) as conn:
-                            #     async with conn.cursor(cursor_factory=DictCursor) as cur:
-                            #         await cur.execute("UPDATE wall SET last_id = %s WHERE id = %s", (walls[wall_id]['wall'].last_id, walls[wall_id]['wall'].id))
+                        # self.task_walls[wall_id]['wall'].last_id = resp['items'][0]['id']
+                        msg += f'\t{self.task_walls[wall_id]["wall"]}\n'
+                        # async with aiopg.connect(sets["psqlUri"]) as conn:
+                        #     async with conn.cursor(cursor_factory=DictCursor) as cur:
+                        #         await cur.execute("UPDATE wall SET last_id = %s WHERE id = %s", (self.task_walls[wall_id]['wall'].last_id, self.task_walls[wall_id]['wall'].id))
+            
             if new_post:
                 self.cog.client.logger.info('Task {aa}USR{aa} {tttpy}\n{msg} {ttt}'.format_map(SafeDict(msg=msg)))
+            self.sleep_on_error = 30
 
         @repost_task.before_loop
         async def before_repost_task(self):
@@ -215,7 +219,8 @@ class Repost(commands.Cog):
         @repost_task.error
         async def error_repost_task(self, exc):
             await self.cog.client.error_handler('repost_task', usr=self, exc=exc)
-            await asyncio.sleep(5)
+            await asyncio.sleep(self.sleep_on_error)
+            self.sleep_on_error += 30
             self.repost_task.restart()
 
         async def private_task(self):
