@@ -512,11 +512,11 @@ class Subscriptions(commands.Cog):
         usr, _ = self.repcog.User.find_by_args(auth_data['usr_id'])
         await usr.set_token(data.token)
 
-        async with aiovk.TokenSession(usr.token) as ses:
-            vkapi = aiovk.API(ses)
-            user = (await vkapi.users.get(fields=self.user_fields, v='5.130'))[0]
+        async with AsyncVkExecuteRequestPool() as pool:
+            usr_REQ = pool.add_call('users.get', usr.token, self.usr_call_attrs)
+        usr_RESP = usr_REQ.result
         msg = self.client.get_channel(auth_data["chn_id"]).get_partial_message(auth_data['msg_id'])
-        await msg.edit(content=f"Your profile is now linked to this account.\nYou can change it with `/subs link` command.", embed=compile_wall_embed(user))
+        await msg.edit(content=f"Your are now logger in with this account.\nYou can change it with `/subs link` command.", embed=compile_wall_embed(usr_RESP[0]))
 
         self.repcog.User.auth_data.remove(auth_data)
 
