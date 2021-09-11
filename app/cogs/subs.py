@@ -453,7 +453,7 @@ class Subscriptions(commands.Cog):
                 if len(subs) == 0:
                     wall, wallmsg = self.repcog.Wall.find_by_args(wall_id)
                     if wall is None:
-                        wall, wallmsg = await self.repcog.Wall_add(wall_id, 0)
+                        wall, wallmsg = await self.repcog.Wall_add(wall_id, post['id'])
                     
                     buttons = [create_button(
                             style=ButtonStyle.green, label='Yes', custom_id='yes'),

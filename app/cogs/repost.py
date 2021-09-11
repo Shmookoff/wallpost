@@ -199,11 +199,11 @@ class Repost(commands.Cog):
                                         raise
                                 else:
                                     msg += f'\t\t{sub}\n'
-                        # self.task_walls[wall_id]['wall'].last_id = resp['items'][0]['id']
+                        self.task_walls[wall_id]['wall'].last_id = resp['items'][0]['id']
                         msg += f'\t{self.task_walls[wall_id]["wall"]}\n'
-                        # async with aiopg.connect(sets["psqlUri"]) as conn:
-                        #     async with conn.cursor(cursor_factory=DictCursor) as cur:
-                        #         await cur.execute("UPDATE wall SET last_id = %s WHERE id = %s", (self.task_walls[wall_id]['wall'].last_id, self.task_walls[wall_id]['wall'].id))
+                        async with aiopg.connect(sets["psqlUri"]) as conn:
+                            async with conn.cursor(cursor_factory=DictCursor) as cur:
+                                await cur.execute("UPDATE wall SET last_id = %s WHERE id = %s", (self.task_walls[wall_id]['wall'].last_id, self.task_walls[wall_id]['wall'].id))
             
             if new_post:
                 self.cog.client.logger.info('Task {aa}USR{aa} {tttpy}\n{msg} {ttt}'.format_map(SafeDict(msg=msg)))
