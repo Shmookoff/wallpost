@@ -9,6 +9,7 @@ import aiopg
 import aiovk
 from aiovk.pools import AsyncVkExecuteRequestPool
 from aiovk.exceptions import VkAPIError
+from asyncio.exceptions import TimeoutError
 
 from psycopg2.extras import DictCursor
 
@@ -124,6 +125,7 @@ class Subscriptions(commands.Cog):
         if channel is None:
             channel = ctx.channel
         ctx.webhook_channel = channel
+        ctx.wall_id = wall_id
 
         await self.request_walls(ctx)
 
@@ -255,6 +257,7 @@ class Subscriptions(commands.Cog):
         if channel is None:
             channel = ctx.channel
         ctx.webhook_channel = channel
+        ctx.wall_id = wall_id
         
         srv, _ = self.repcog.Server.find_by_args(ctx.guild.id)
         chn, _ = srv.find_channel(channel.id)
@@ -305,58 +308,24 @@ class Subscriptions(commands.Cog):
         else:
             raise CouldNotFindWall(ctx.grp_ERR, ctx.usr_ERR)
 
-    @cog_ext.cog_subcommand(base='subs', name='account',
-                            description='Show VK Account you are logged in',
-                            guild_ids=None if sets['version'] == 'MAIN' else [sets['srvcSrv']])
+    @cog_ext.cog_subcommand(base='subs', name='manage',
+                            description='Manage Channel Subscriptions',
+                            options=[create_option(
+                                name='channel',
+                                description='Default: current Channel',
+                                option_type=7,
+                                required=False)],
+                                guild_ids=None if sets['version'] == 'MAIN' else [sets['srvcSrv']])
     @commands.bot_has_permissions(manage_webhooks=True, send_messages=True, embed_links=True, add_reactions=True, manage_messages=True, read_message_history=True)
-    @commands.has_permissions(administrator=True)
-    async def account(self, ctx):
-        logmsg = str()
-        usr, _ = self.repcog.User.find_by_args(ctx.author.id)
-        if usr is None:
-            usr, usrmsg = await self.repcog.User_add(ctx.author.id)
-            logmsg += f'{usrmsg}\n'
-            self.logger.info('Add {aa}USR{aa} {tttpy}\n{msg} {ttt}'.format_map(SafeDict(msg=logmsg)))
-        token = usr.token
-        if token is None:
-            raise NotAuthenticated
-
-
-        async with aiovk.TokenSession(token) as ses:
-            vkapi = aiovk.API(ses)
-            user_embed = compile_wall_embed((await vkapi.users.get(fields=self.user_fields, v='5.130'))[0])
-        await ctx.send(f'You are logged in **{ctx.guild.name}** is linked to this account.\nYou can change it with `/subs link` command.', embed=user_embed)
-
-    @cog_ext.cog_subcommand(base='subs', name='link',
-                            description='Login to your VK Account',
-                            guild_ids=None if sets['version'] == 'MAIN' else [sets['srvcSrv']])
-    @commands.bot_has_permissions(manage_webhooks=True, send_messages=True, embed_links=True, add_reactions=True, manage_messages=True, read_message_history=True)
-    @commands.has_permissions(administrator=True)
-    async def link(self, ctx):
-        logmsg = str()
-        usr, _ = self.repcog.User.find_by_args(ctx.author.id)
-        if usr is None:
-            usr, usrmsg = await self.repcog.User_add(ctx.author.id)
-            logmsg += f'{usrmsg}\n'
-            self.logger.info('Add {aa}USR{aa} {tttpy}\n{msg} {ttt}'.format_map(SafeDict(msg=logmsg)))
-
-        ctx.msg = await ctx.send('Check your DM for login link')
-
-        key = Fernet.generate_key().decode("utf-8")
-        self.repcog.User.auth_data.append({"key": key, "usr_id": usr.id, "chn_id": ctx.channel.id, "msg_id": ctx.msg.id})
-        buttons = [create_button(
-            style=ButtonStyle.URL, label='Login', url=f'{sets["url"]}/oauth2/login?key={key}')]
-        action_row = create_actionrow(*buttons)
-        await ctx.author.send(content='Follow the link to login to your VK profile', components=[action_row])
+    async def sub_man(self, ctx, channel=None):
+        pass
 
     async def request_walls(self, ctx):
-        ctx.usr_RESP, ctx.grp_RESP = None, None
-        ctx.usr_ERR, ctx.grp_ERR = None, None
-        wall_id = ctx.kwargs.get('wall_id')
+        ctx.grp_ERR, ctx.usr_ERR= None
 
         vk_pool = AsyncVkExecuteRequestPool()
-        groupsGetById_REQ = vk_pool.add_call('groups.getById', ctx.vk_token, self.grp_call_attrs | {'group_id': wall_id})
-        usersGet_REQ = vk_pool.add_call('users.get', ctx.vk_token, self.usr_call_attrs | {'user_ids': wall_id})
+        groupsGetById_REQ = vk_pool.add_call('groups.getById', ctx.vk_token, self.grp_call_attrs | {'group_id': ctx.wall_id})
+        usersGet_REQ = vk_pool.add_call('users.get', ctx.vk_token, self.usr_call_attrs | {'user_ids': ctx.wall_id})
         await vk_pool.execute()
 
         if groupsGetById_REQ.ok:
@@ -501,6 +470,52 @@ class Subscriptions(commands.Cog):
 
         else:
             await ctx.msg.edit(content='❌ Cancelled', embed=None, components=[])
+    
+    @cog_ext.cog_subcommand(base='subs', name='account',
+                            description='Login with VK and show account you are logged in',
+                            guild_ids=None if sets['version'] == 'MAIN' else [sets['srvcSrv']])
+    @commands.bot_has_permissions(manage_webhooks=True, send_messages=True, embed_links=True, add_reactions=True, manage_messages=True, read_message_history=True)
+    async def account(self, ctx):
+        logmsg = str()
+        ctx.usr, _ = self.repcog.User.find_by_args(ctx.author.id)
+        if ctx.usr is None:
+            ctx.usr, usrmsg = await self.repcog.User_add(ctx.author.id)
+            logmsg += f'{usrmsg}\n'
+            self.logger.info('Add {aa}USR{aa} {tttpy}\n{msg} {ttt}'.format_map(SafeDict(msg=logmsg)))
+        token = ctx.usr.token
+        if token is None:
+            await self.login(ctx)
+            return
+
+        async with AsyncVkExecuteRequestPool() as pool:
+            usr_REQ = pool.add_call('users.get', ctx.usr.token, self.usr_call_attrs)
+        usr_RESP = usr_REQ.result
+        embed = compile_wall_embed(usr_RESP[0])
+
+        buttons = [create_button(style=ButtonStyle.blue, label='Relogin')]
+        action_row = create_actionrow(*buttons)
+        ctx.msg = await ctx.send(content='You are logged in with this account', embed=embed, components=[action_row])
+        try:
+            button = await wait_for_component(self.client, components=action_row, check=lambda btn_ctx: btn_ctx.author_id == ctx.author_id, timeout=120.0)
+        except TimeoutError:
+            buttons = [create_button(style=ButtonStyle.blue, label='Relogin (timeout)', disabled=True)]
+            action_row = create_actionrow(*buttons)
+            await ctx.msg.edit(content='You are logged in with this account', embed=embed, components=[action_row])
+        else:
+            await button.defer(edit_origin=True)
+            await self.login(ctx)
+
+    async def login(self, ctx):
+        if hasattr(ctx, 'msg'):
+            await ctx.msg.edit(content='Check your DM for login link', embed=None, components=[])
+        else:
+            ctx.msg = await ctx.send(content='Check your DM for login link')
+
+        key = Fernet.generate_key().decode("utf-8")
+        buttons = [create_button(style=ButtonStyle.URL, label='Login', url=f'{sets["url"]}/oauth2/login?key={key}')]
+        action_row = create_actionrow(*buttons)
+        usr_msg = await ctx.author.send(content='Follow the link to login with your VK profile', components=[action_row])
+        self.repcog.User.auth_data.append({"key": key, "usr_id": ctx.usr.id, "chn_id": ctx.channel.id, "msg_id": ctx.msg.id, "usr_msg_id": usr_msg.id})
 
     @ipc.server.route()
     async def authentication(self, data):
@@ -515,12 +530,17 @@ class Subscriptions(commands.Cog):
         async with AsyncVkExecuteRequestPool() as pool:
             usr_REQ = pool.add_call('users.get', usr.token, self.usr_call_attrs)
         usr_RESP = usr_REQ.result
+        embed = compile_wall_embed(usr_RESP[0])
+
+        dc_usr = self.client.get_user(auth_data['usr_id'])
+        dm = await dc_usr.create_dm()
+        msg = dm.get_partial_message(auth_data['usr_msg_id'])
+        await msg.edit(content="You are now logged in with this account", embed=embed, components=[])
         msg = self.client.get_channel(auth_data["chn_id"]).get_partial_message(auth_data['msg_id'])
-        await msg.edit(content=f"Your are now logger in with this account.\nYou can change it with `/subs link` command.", embed=compile_wall_embed(usr_RESP[0]))
+        await msg.edit(content="You are now logged in with this account", embed=embed, components=[])
 
         self.repcog.User.auth_data.remove(auth_data)
-
-        return 'Your account is now bound to the server. You can now close this tab.'
+        return 'All done! You can now close this tab.'
 
 
 def setup(client):
