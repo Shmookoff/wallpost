@@ -321,7 +321,7 @@ class Subscriptions(commands.Cog):
         pass
 
     async def request_walls(self, ctx):
-        ctx.grp_ERR, ctx.usr_ERR= None
+        ctx.grp_ERR, ctx.usr_ERR = None, none, None
 
         vk_pool = AsyncVkExecuteRequestPool()
         groupsGetById_REQ = vk_pool.add_call('groups.getById', ctx.vk_token, self.grp_call_attrs | {'group_id': ctx.wall_id})
