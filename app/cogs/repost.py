@@ -183,7 +183,7 @@ class Repost(commands.Cog):
                 if not self.task_walls[wall_id]['empty']:
                     resp = self.task_walls[wall_id]['req'].result
                     # If post is new
-                    if self.task_walls[wall_id]['wall'].last_id != resp['items'][0]['id']:
+                    if resp['items'][0]['id'] > self.task_walls[wall_id]['wall'].last_id:
                         new_post = True
                         post_embed = compile_post_embed(resp)
                         for sub in self.task_walls[wall_id]['subs']:
