@@ -53,22 +53,17 @@ class ExceptionHandler(commands.Cog):
 
             if ctx.subcommand_name == 'account':
                 pass
-            elif ctx.subcommand_name == 'link':
-                pass
             elif ctx.subcommand_name == 'add':
-                if isinstance(exc, MaximumWebhooksReached):
-                    exc.embed = set_error_embed(f'Maximum number of webhooks reached (10).\n> Try removing a webhook from {ctx.webhook_channel.mention}.')
-                elif isinstance(exc, WallClosed):
-                    exc.embed = set_error_embed(f'Wall is closed\n\n> Your VK account doesn\'t have access to wall **{ctx.kwargs["wall_id"]}**.')
-                elif isinstance(exc, SubExists):
+                if isinstance(exc, SubExists):
                     exc.embed = set_error_embed(f'{ctx.webhook_channel.mention} is already subscribed to wall **{ctx.kwargs["wall_id"]}**.')
                 elif isinstance(exc, MsgTooLong):
                     exc.embed = set_error_embed(f'Message is too long.')
-            elif ctx.subcommand_name == 'info':
+            elif ctx.subcommand_name == 'manage':
                 if isinstance(exc, NoSubs):
                     exc.embed = set_error_embed(f'{ctx.webhook_channel.mention} doesn\'t have any subscriptions.')
-            elif ctx.subcommand_name == 'del':
-                if isinstance(exc, NotSub):
+                elif isinstance(exc, MsgTooLong):
+                    exc.embed = set_error_embed(f'Message is too long.')
+                elif isinstance(exc, NotSub):
                     exc.embed = set_error_embed(f'{ctx.webhook_channel.mention} isn\'t subscribed to wall **{ctx.kwargs["wall_id"]}**.')
         elif ctx.name == 'cogs':
             if isinstance(exc, slash_errors.CheckFailure):
@@ -82,8 +77,6 @@ class ExceptionHandler(commands.Cog):
             elif isinstance(exc, WallIdBadArgument):
                 exc.embed = set_error_embed(f'VK Wall ID is invalid.\n\n>>> **{ctx.kwargs["wall_id"]}** isn\'t a valid VK Wall ID.\nPlease, specify `[wall_id]` as **String**')
                 exc.command_and_example = True
-            elif isinstance(exc, CouldNotFindWall):
-                exc.embed = set_error_embed(f'Couldn\'t find this Wall.\n\nGroup search:\n> {exc.grp_msg}\nUser search:\n> {exc.usr_msg}')
             elif isinstance(exc, commands.BotMissingPermissions):
                 exc.embed = set_error_embed(f'Bot is missing permission(s).\n\n> {exc}')
             elif isinstance(exc, commands.MissingPermissions):

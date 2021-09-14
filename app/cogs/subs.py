@@ -286,7 +286,7 @@ class Subscriptions(commands.Cog):
         logmsg += f'{srvmsg}\n'
         chn, chnmsg = srv.find_channel(channel.id)
         if chn is None:
-            raise NotSub
+            raise NoSubs
 
         select_options = list()
         walls = list()
