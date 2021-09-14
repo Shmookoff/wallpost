@@ -14,7 +14,7 @@ from psycopg2.extras import DictCursor
 from rsc.config import sets, vk_sets
 from rsc.classes import SafeDict
 from rsc.functions import compile_post_embed
-from rsc.exceptions import MaximumWebhooksReached
+from rsc.exceptions import MsgTooLong
 
 
 class Repost(commands.Cog):
@@ -192,7 +192,7 @@ class Repost(commands.Cog):
                                     await dc_chn.send(content=sub.msg, embed=post_embed)
                                 except Exception as exc:
                                     if isinstance(exc, AttributeError):
-                                        pass
+                                        sub.channel.delete()
                                     elif isinstance(exc, discord_errors.Forbidden):
                                         pass
                                     else:
@@ -255,28 +255,18 @@ class Repost(commands.Cog):
         def __str__(self):
             return f'SRV {self.id}'
 
-        def Channel_init(self, id_, webhook_url):
-            chn = Repost.Server.Channel(self, id_, webhook_url)
+        def Channel_init(self, id_):
+            chn = Repost.Server.Channel(self, id_)
             msg = f'Init {chn}'
             return chn, msg
 
-        async def Channel_add(self, discord_channel):
-            try:
-                webhook = await discord_channel.create_webhook(name=f"WallPost {sets['version'] if sets['version'] == 'DEV' else 'VK'}")
-            except discord_errors.Forbidden as exc:
-                if exc.code == 50013:
-                    raise commands.BotMissingPermissions(['manage_webhooks'])
-                raise
-            except discord_errors.HTTPException as exc:
-                if exc.code == 30007:
-                    raise MaximumWebhooksReached
-                raise
-            chn = Repost.Server.Channel(self, discord_channel.id, webhook.url)
+        async def Channel_add(self, id_):
+            chn = Repost.Server.Channel(self, id_)
             msg = f'Add {chn}'
             async with aiopg.connect(sets["psqlUri"]) as conn:
                 async with conn.cursor(cursor_factory=DictCursor) as cur:
-                    await cur.execute("INSERT INTO channel (id, webhook_url, server_id) VALUES(%s, %s, %s)", (
-                        chn.id, chn.webhook_url, chn.server.id))
+                    await cur.execute("INSERT INTO channel (id, server_id) VALUES(%s, %s)", (
+                        chn.id, chn.server.id))
             return chn, msg
 
         async def delete(self):
@@ -317,23 +307,16 @@ class Repost(commands.Cog):
         class Channel:
             all_ = set()
 
-            def __init__(self, server, id_, webhook_url):
+            def __init__(self, server, id_):
                 self.server = server
-
                 self.id = id_
-                self.webhook_url = webhook_url
-
                 self.subscriptions = set()
                 server.channels.add(self)
 
                 Repost.Server.Channel.all_.add(self)
-
-            @property
-            def webhook_id(self):
-                return self.webhook_url.split('/')[5]
             
             def __str__(self):
-                return f'CHN {self.id} WH {self.webhook_id}'
+                return f'CHN {self.id}'
             
             def Subscription_init(self, wall, user, msg, id_):
                 """Initiates a subscription
@@ -363,11 +346,14 @@ class Repost(commands.Cog):
                     Subscription: Subscription added
                     String: Message for logger
                 """
+                if msg:
+                    if len(msg) > 255:
+                        raise MsgTooLong
                 sub = Repost.Server.Channel.Subscription(self, wall, user, msg)
                 async with aiopg.connect(sets["psqlUri"]) as conn:
                     async with conn.cursor(cursor_factory=DictCursor) as cur:
                         await cur.execute("INSERT INTO subscription (wall_id, users_id, channel_id, msg) VALUES(%s, %s, %s, %s) RETURNING id", (
-                            sub.wall.id, sub.user.id, sub.channel.id, msg))
+                            sub.wall.id, sub.user.id, sub.channel.id, sub.msg))
                         sub.id = (await cur.fetchone())['id']
                 msg = f'Add {sub}'
                 return sub, msg
@@ -458,6 +444,19 @@ class Repost(commands.Cog):
                     self.wall.subscriptions.remove(self)
                     self.user.subscriptions.remove(self)
                     Repost.Server.Channel.Subscription.all_.remove(self)
+                    return msg
+                
+                async def change_msg(self, new_msg):
+                    if len(new_msg) > 255:
+                        raise MsgTooLong
+                    msg = f'Change msg {self}'
+                    if new_msg == 'None':
+                        new_msg = None
+                    self.msg = new_msg
+                    async with aiopg.connect(sets["psqlUri"]) as conn:
+                        async with conn.cursor(cursor_factory=DictCursor) as cur:
+                            await cur.execute("UPDATE subscription SET msg = %s WHERE id = %s", (
+                                self.msg, self.id))
                     return msg
 
 

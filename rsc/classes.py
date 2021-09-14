@@ -1,9 +1,10 @@
 import discord
-from discord.ext import commands
 
 import logging
 import sys
 from io import StringIO
+
+from rsc.functions import compile_wall_embed
 
 
 class SafeDict(dict):
@@ -80,3 +81,25 @@ class DiscordHandler(logging.StreamHandler):
             self.flush()
         except Exception as exc:
             self.handleError(record)
+
+class VKRespWrapper:
+    def __init__(self, wall=None, post=None, error=None):
+        self.error = error
+        if not error:
+            self.wall = wall
+            self.embed = compile_wall_embed(wall)
+            if 'name' in wall:
+                self.type = 'grp'
+                self.id = -wall['id']
+                self.name = wall['name']
+            else:
+                self.type = 'usr'
+                self.id = wall['id']
+                self.name = f"{wall['first_name']} {wall['last_name']}"
+            
+            self.post = post
+        else:
+            if error['method'] == 'groups.getById':
+                self.type = 'grp'
+            else:
+                self.type = 'usr'

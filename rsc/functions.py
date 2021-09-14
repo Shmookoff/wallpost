@@ -28,7 +28,7 @@ def check_service_chn():
 
 #Subscription
 
-def compile_wall_embed(wall):
+def compile_wall_embed(wall) -> discord.Embed:
     embed = discord.Embed(color = sets["embedColor"])
     if wall['status'] != '':
         embed.add_field(
@@ -69,7 +69,7 @@ def compile_wall_embed(wall):
     )
     return embed
 
-def compile_post_embed(resp, wall1=None):
+def compile_post_embed(resp, wall1=None) -> discord.Embed:
     if wall1 is None:
         post = resp['items'][0]
         embed = discord.Embed(
@@ -162,7 +162,7 @@ def compile_post_embed(resp, wall1=None):
 
 #Errors
 
-def set_error_embed(d):
+def set_error_embed(d) -> discord.Embed:
     return discord.Embed(title=sets["errorTitle"], color=sets["errorColor"], description=d)
 
 def add_command_and_example(ctx, error_embed):

@@ -1,24 +1,22 @@
 import discord
 from discord.ext import commands, ipc
-from discord_slash import cog_ext
+from discord_slash import cog_ext, SlashContext
 from discord_slash.utils.manage_commands import create_option
-from discord_slash.utils.manage_components import create_button, create_actionrow, wait_for_component
+from discord_slash.utils.manage_components import create_button, create_select, create_select_option, create_actionrow, wait_for_component
 from discord_slash.model import ButtonStyle
 
 import aiopg
-import aiovk
 from aiovk.pools import AsyncVkExecuteRequestPool
-from aiovk.exceptions import VkAPIError
 from asyncio.exceptions import TimeoutError
 
 from psycopg2.extras import DictCursor
 
-import texttable
+from copy import deepcopy
 from cryptography.fernet import Fernet
 
 from rsc.config import sets
 from rsc.functions import compile_wall_embed, vk
-from rsc.classes import SafeDict
+from rsc.classes import SafeDict, VKRespWrapper
 from rsc.exceptions import *
 
 
@@ -38,8 +36,9 @@ class Subscriptions(commands.Cog):
         else:
             self.client.logger.info(msg)
 
-        self.grp_call_attrs = {'extended': 1, 'count': 1, 'fields': 'photo_200,status,screen_name,members_count,verified', 'v': '5.84'}
-        self.usr_call_attrs = {'extended': 1, 'count': 1, 'fields': 'photo_max,status,screen_name,followers_count,verified', 'v': '5.84'}
+        self.groups_getById_attrs = {'fields': 'photo_200,status,screen_name,members_count,verified', 'v': '5.84'}
+        self.users_get_attrs = {'fields': 'photo_max,status,screen_name,followers_count,verified', 'v': '5.84'}
+        self.wall_get_attrs = {'count': 1, 'v': '5.84'}
 
     async def ainit(self):
         async with aiopg.connect(sets["psqlUri"]) as conn:
@@ -77,7 +76,7 @@ class Subscriptions(commands.Cog):
             msg += f'{_msg}\n'
             for chn in chns:
                 if chn['server_id'] == _srv.id:
-                    _chn, _msg = _srv.Channel_init(chn['id'], chn['webhook_url'])
+                    _chn, _msg = _srv.Channel_init(chn['id'])
                     msg += f'\t{_msg}\n'
                     for sub in subs:
                         if sub['channel_id'] == _chn.id:
@@ -113,200 +112,155 @@ class Subscriptions(commands.Cog):
                             guild_ids=None if sets['version'] == 'MAIN' else [sets['srvcSrv']])
     @commands.bot_has_permissions(manage_webhooks=True, send_messages=True, embed_links=True, add_reactions=True, manage_messages=True, read_message_history=True)
     @commands.has_permissions(manage_webhooks=True)
-    async def sub_add(self, ctx, wall_id, channel=None):
+    async def sub_add(self, ctx: SlashContext, wall_id: str, channel: discord.TextChannel=None):
         logmsg = str()
-        usr, usrmsg = self.repcog.User.find_by_args(ctx.author.id)
-        if usr is None:
-            usr, usrmsg = await self.repcog.User_add(ctx.author.id)
+        ctx.bot_usr, usrmsg = self.repcog.User.find_by_args(ctx.author.id)
+        if ctx.bot_usr is None:
+            ctx.bot_usr, usrmsg = await self.repcog.User_add(ctx.author.id)
         logmsg += f'{usrmsg}\n'
-        ctx.vk_token = usr.token
-        if ctx.vk_token is None:
+        if ctx.bot_usr.token is None:
             raise NotAuthenticated
         if channel is None:
             channel = ctx.channel
-        ctx.webhook_channel = channel
-        ctx.wall_id = wall_id
+        
+        reqs = list()
+        vk_pool = AsyncVkExecuteRequestPool()
+        # Req for walls
+        reqs.append({'wall_REQ': vk_pool.add_call('groups.getById', ctx.bot_usr.token, self.groups_getById_attrs | {'group_id': wall_id}), 'ERR': None})
+        reqs.append({'wall_REQ': vk_pool.add_call('users.get', ctx.bot_usr.token, self.users_get_attrs | {'user_ids': wall_id}), 'ERR': None})
+        await vk_pool.execute()
+        # Req for posts
+        for req in reqs:
+            if req['wall_REQ'].ok:
+                req['wall_RESP'] = req['wall_REQ'].result
+                if req['wall_RESP'][0]['id'] < 0:
+                    req['id'] = abs(req['wall_RESP'][0]['id'])
+                else:
+                    req['id'] = req['wall_RESP'][0]['id']
+                req['post_REQ'] = vk_pool.add_call('wall.get', ctx.bot_usr.token, self.wall_get_attrs | {'owner_id': req['id']})
+            else:
+                req['ERR'] = req['wall_REQ'].error
+        await vk_pool.execute()
+        # Offset req for pinned posts
+        for req in reqs:
+            if not req['ERR']:
+                if req['post_REQ'].ok:
+                    req['post_RESP'] = req['post_REQ'].result
+                    if len(req['post_RESP']['items']) > 0:
+                        if req['post_RESP']['items'][0].get('is_pinned', False):
+                            req['post_REQ'] = vk_pool.add_call('wall.get', ctx.bot_usr.token, self.wall_get_attrs | {'owner_id': req['id'], 'offset': 1})
+                else:
+                    req['ERR'] = req['post_REQ'].error
+        await vk_pool.execute()
+        # Set post manually if empty wall
+        for req in reqs:
+            if not req['ERR']:
+                req['post_RESP'] = req['post_REQ'].result
+                if len(req['post_RESP']['items']) == 0:
+                    req['post_RESP'] = {'items': [{'id': 0}]}
+        #Wrap and return
+                wrapped = VKRespWrapper(req['wall_RESP'][0], req['post_RESP']['items'][0])
+                if wrapped.type == 'grp':
+                    grp = wrapped
+                else:
+                    usr = wrapped
+            else:
+                wrapped = VKRespWrapper(error=req['ERR'])
+                if wrapped.type == 'grp':
+                    grp = wrapped
+                else:
+                    usr = wrapped
 
-        await self.request_walls(ctx)
-
-        if (not ctx.grp_ERR) and (not ctx.usr_ERR):
+        if (not grp.error) and (not usr.error):
             buttons = [create_button(
-                    style=ButtonStyle.blue, label=ctx.grp_NAME if len(ctx.grp_NAME) <= 25 else f'{ctx.grp_NAME[:24]}…', custom_id='grp'),
+                    style=ButtonStyle.blue, label=grp.name, custom_id='grp'),
                 create_button(
-                    style=ButtonStyle.blue, label=ctx.usr_NAME if len(ctx.usr_NAME) <= 25 else f'{ctx.usr_NAME[:24]}…', custom_id='usr'),
+                    style=ButtonStyle.blue, label=usr.name if len(usr.name) <= 80 else f'{usr.name[:79]}…', custom_id='usr'),
                 create_button(
                     style=ButtonStyle.red, label="Cancel", custom_id='cancel')]
             action_row = create_actionrow(*buttons)
-            ctx.msg = await ctx.send(content='Select the wall', embeds=[ctx.grp_EMBED, ctx.usr_EMBED], components=[action_row])
+
+            ctx.msg = await ctx.send(content='Select the wall', embeds=[grp.embed, usr.embed], components=[action_row])
             button = await wait_for_component(self.client, components=action_row, check=lambda btn_ctx: btn_ctx.author_id == ctx.author_id, timeout=120.0)
             await button.defer(edit_origin=True)
 
             if button.custom_id == 'grp':
-                await self.setup_wall(ctx, logmsg, usr, 'grp')
+                wrapped = grp
             elif button.custom_id == 'usr':
-                await self.setup_wall(ctx, logmsg, usr, 'usr')
+                wrapped = usr
             else:
-                await ctx.msg.edit(content='❌ Cancelled', embed=None, components=[])
-        elif not ctx.grp_ERR:
-            await self.setup_wall(ctx, logmsg, usr, 'grp')
-        elif not ctx.usr_ERR:
-            await self.setup_wall(ctx, logmsg, usr, 'usr')
+                await ctx.msg.edit(content='❌ Cancelled', embeds=[], components=[])
+                return
+        elif not grp.error:
+            wrapped = grp
+        elif not usr.error:
+            wrapped = usr
         else:
-            raise CouldNotFindWall(ctx.grp_RESP, ctx.usr_RESP)
+            raise CouldNotFindWall(grp.error, usr.error)
 
-    @cog_ext.cog_subcommand(base='subs', name='info',
-                            description='Show all Subscriptions for Channel',
-                            options=[create_option(
-                                name='channel',
-                                description='Default: current Channel',
-                                option_type=7,
-                                required=False
-                            )],
-                            guild_ids=None if sets['version'] == 'MAIN' else [sets['srvcSrv']])
-    @commands.bot_has_permissions(manage_webhooks=True, send_messages=True, embed_links=True, add_reactions=True, manage_messages=True, read_message_history=True)
-    @commands.has_permissions(manage_webhooks=True)
-    async def sub_info(self, ctx, channel=None):
-        logmsg = str()
-        usr, _ = self.repcog.User.find_by_args(ctx.author.id)
-        if usr is None:
-            usr, usrmsg = await self.repcog.User_add(ctx.author.id)
-            logmsg += f'{usrmsg}\n'
-            self.logger.info('Add {aa}USR{aa} {tttpy}\n{msg} {ttt}'.format_map(SafeDict(msg=logmsg)))
-        token = usr.token
-        if token is None:
-            raise NotAuthenticated
-        if channel is None:
-            channel = ctx.channel
-        ctx.webhook_channel = channel
+        buttons = [create_button(
+                style=ButtonStyle.green, label='Yes', custom_id='yes'),
+            create_button(
+                style=ButtonStyle.red, label='No', custom_id='no')]
+        action_row = create_actionrow(*buttons)
+        if hasattr(ctx, 'msg'):
+            await ctx.msg.edit(content='Is this the wall you requested?', embed=wrapped.embed, components=[action_row])
+        else:
+            ctx.msg = await ctx.send(content='Is this the wall you requested?', embed=wrapped.embed, components=[action_row])
+        button = await wait_for_component(self.client, components=action_row, check=lambda btn_ctx: btn_ctx.author_id == ctx.author_id, timeout=120.0)
+        await button.defer(edit_origin=True)
 
-        srv, _ = self.repcog.Server.find_by_args(ctx.guild.id)
-        chn, _ = srv.find_channel(channel.id)
-        if chn is None:
-            raise NoSubs
-        elif len(chn.subscriptions) == 0:
-            raise NoSubs
-        subs = chn.subscriptions
+        if button.custom_id == 'yes':
+            srv, srvmsg = self.repcog.Server.find_by_args(ctx.guild.id)
+            logmsg += f'{srvmsg}\n'
+            chn, chnmsg = srv.find_channel(channel.id)
+            if chn is None:
+                chn, chnmsg = await srv.Channel_add(channel.id)
+            logmsg += f'\t{chnmsg}\n'
 
-
-        embed = discord.Embed(
-            title = f'Wall subscriptions',
-            description = f'for {channel.mention} channel:',
-            color = sets["embedColor"]
-        )
-        table = texttable.Texttable(max_width=0)
-        table.set_cols_align(['c','c','c','c','c'])
-        table.header(['Name', 'Short address', 'Type', 'ID', 'Added by'])
-        table.set_cols_dtype(['t','t','t','i','t'])
-        table.set_chars(['─','│','┼','─'])
-
-        walls = list()
-        async with AsyncVkExecuteRequestPool() as pool:
-            for sub in subs:
-                if sub.wall.id < 0:
-                    walls.append({
-                        'subObject': sub, 'resp': pool.add_call('groups.getById', sub.user.token, {'group_ids': abs(sub.wall.id)})})
-                else:
-                    walls.append({
-                        'subObject': sub, 'resp': pool.add_call('users.get', sub.user.token, {'user_ids': sub.wall.id, 'fields': 'screen_name'})})
-        
-        for wall in walls:
-            sub = wall['subObject']
-            resp = wall['resp'].result[0]
-
-            if sub.wall.id < 0:
-                wall_type = 'Group'
-            else:
-                resp['name'] = f"{resp['first_name']} {resp['last_name']}"
-                wall_type = 'User'
-            added_by = self.client.get_user(sub.user.id)
-
-            table.add_row([resp['name'], resp['screen_name'], wall_type, resp['id'], f'{added_by.name}#{added_by.discriminator}'])
-            embed.add_field(
-                name = resp['name'],
-                value = f"Short address: `{resp['screen_name']}`\nType: `{wall_type}`\nID: `{resp['id']}`\nAdded by: {added_by.mention}",
-                inline = True
-            )
-
-        await ctx.send(f"**Wall subscriptions for **{channel.mention}** channel:**\n```{table.draw()}```", embed=embed)
-
-    @cog_ext.cog_subcommand(base='subs', name='del',
-                            description='Unsubscribe Channel from VK Wall',
-                            options=[create_option(
-                                name='wall_id',
-                                description='Can be both VK Wall ID and Short-name',
-                                option_type=3,
-                                required=True
-                            ),create_option(
-                                name='channel',
-                                description='Default: current Channel',
-                                option_type=7,
-                                required=False
-                            )],
-                            guild_ids=None if sets['version'] == 'MAIN' else [sets['srvcSrv']])
-    @commands.bot_has_permissions(manage_webhooks=True, send_messages=True, embed_links=True, add_reactions=True, manage_messages=True, read_message_history=True)
-    @commands.has_permissions(manage_webhooks=True)
-    async def sub_del(self, ctx, wall_id, channel=None):
-        logmsg = str()
-        usr, usrmsg = self.repcog.User.find_by_args(ctx.author.id)
-        if usr is None:
-            usr, usrmsg = await self.repcog.User_add(ctx.author.id)
-        logmsg += f'{usrmsg}\n'
-        ctx.vk_token = usr.token
-        if ctx.vk_token is None:
-            raise NotAuthenticated
-        if channel is None:
-            channel = ctx.channel
-        ctx.webhook_channel = channel
-        ctx.wall_id = wall_id
-        
-        srv, _ = self.repcog.Server.find_by_args(ctx.guild.id)
-        chn, _ = srv.find_channel(channel.id)
-        if chn is None:
-            raise NotSub
-
-        await self.request_walls(ctx)
-
-        if (not ctx.grp_ERR) and (not ctx.usr_ERR):
-            subs, _ = chn.find_subs(ctx.wall_id)
+            subs, _ = chn.find_subs(wrapped.id, True)
             if len(subs) == 0:
-                raise NotSub
-            elif len(subs) == 2:
+                wall, wallmsg = self.repcog.Wall.find_by_args(wrapped.id)
+                if wall is None:
+                    wall, wallmsg = await self.repcog.Wall_add(wrapped.id, wrapped.post['id'])
+                
                 buttons = [create_button(
-                        style=ButtonStyle.blue, label=ctx.grp_NAME if len(ctx.grp_NAME) <= 25 else f'{ctx.grp_NAME[:24]}…', custom_id='grp'),
+                        style=ButtonStyle.green, label='Yes', custom_id='yes'),
                     create_button(
-                        style=ButtonStyle.blue, label=ctx.usr_NAME if len(ctx.usr_NAME) <= 25 else f'{ctx.usr_NAME[:24]}…', custom_id='usr'),
-                    create_button(
-                        style=ButtonStyle.red, label="Cancel", custom_id='cancel')]
+                        style=ButtonStyle.red, label='No', custom_id='no')]
                 action_row = create_actionrow(*buttons)
-                ctx.msg = await ctx.send(content='Select the wall', embeds=[ctx.grp_EMBED, ctx.usr_EMBED], components=[action_row])
+                await ctx.msg.edit(content=f'Would you like to set a message to be sent with new posts?', embeds=[], components=[action_row])
                 button = await wait_for_component(self.client, components=action_row, check=lambda btn_ctx: btn_ctx.author_id == ctx.author_id, timeout=120.0)
                 await button.defer(edit_origin=True)
 
-                if button.custom_id == 'grp':
-                    await self.setup_wall(ctx, logmsg, usr, 'grp')
-                elif button.custom_id == 'usr':
-                    await self.setup_wall(ctx, logmsg, usr, 'usr')
+                if button.custom_id == 'yes':
+                    await ctx.msg.edit(content=f'Reply with the text you want to be in the notification message (255 chars max).\nSend `None` if you want the message to be empty.',
+                        embeds=[], components=[])
+                    m = await self.client.wait_for('message', check=
+                        lambda m: m.reference is not None and m.reference.message_id == ctx.msg.id and m.author.id == ctx.author.id, timeout=120.0)
+                    msg = m.content
+                    await m.delete()
                 else:
-                    await ctx.msg.edit(content='❌ Cancelled', embed=None, components=[])
-            elif len(subs) == 1:
-                if subs[0].wall.id < 0:
-                    await self.setup_wall(ctx, logmsg, usr, 'grp')
-                else: 
-                    await self.setup_wall(ctx, logmsg, usr, 'usr')
-        elif not ctx.grp_ERR:
-            subs = chn.find_subs(ctx.wall_id)
-            if len(subs) == 0:
-                raise NotSub
+                    msg = None
+                sub, submsg = await chn.Subscription_add(wall, ctx.bot_usr, msg)
+
+                sub_embed = wrapped.embed.copy()
+                sub_embed.add_field(
+                    name='Added by',
+                    value=self.client.get_user(sub.user.id).mention,
+                    inline=False)
+                sub_embed.add_field(
+                    name='Notification message',
+                    value=sub.msg if sub.msg is not None else 'None',
+                    inline=False)
+                
+                logmsg += f'\t\t{submsg}\n{wallmsg}\n'
             else:
-                await self.setup_wall(ctx, logmsg, usr, 'grp')
-        elif not ctx.usr_ERR:
-            subs = chn.find_subs(ctx.wall_id)
-            if len(subs) == 0:
-                raise NotSub
-            else:
-                await self.setup_wall(ctx, logmsg, usr, 'usr')
+                raise SubExists
+            await ctx.msg.edit(content=f'✅ Successfully subscribed {channel.mention} to this wall!', embeds=[sub_embed], components=[])
+            self.logger.info('Add {aa}SUB{aa} {tttpy}\n{msg} {ttt}'.format_map(SafeDict(msg=logmsg)))
         else:
-            raise CouldNotFindWall(ctx.grp_ERR, ctx.usr_ERR)
+            await ctx.msg.edit(content='❌ Cancelled', embeds=[], components=[])
 
     @cog_ext.cog_subcommand(base='subs', name='manage',
                             description='Manage Channel Subscriptions',
@@ -317,165 +271,119 @@ class Subscriptions(commands.Cog):
                                 required=False)],
                                 guild_ids=None if sets['version'] == 'MAIN' else [sets['srvcSrv']])
     @commands.bot_has_permissions(manage_webhooks=True, send_messages=True, embed_links=True, add_reactions=True, manage_messages=True, read_message_history=True)
-    async def sub_man(self, ctx, channel=None):
-        pass
+    async def subs_mng(self, ctx: SlashContext, channel: discord.TextChannel=None):
+        ctx.bot_usr, usrmsg = self.repcog.User.find_by_args(ctx.author.id)
+        if ctx.bot_usr is None:
+            ctx.bot_usr, usrmsg = await self.repcog.User_add(ctx.author.id)
+        if ctx.bot_usr.token is None:
+            raise NotAuthenticated
+        logmsg = f'{usrmsg}\n'
+        if channel is None:
+            channel = ctx.channel
+        ctx.webhook_channel = channel
 
-    async def request_walls(self, ctx):
-        ctx.grp_ERR, ctx.usr_ERR = None, None
+        srv, srvmsg = self.repcog.Server.find_by_args(ctx.guild.id)
+        logmsg += f'{srvmsg}\n'
+        chn, chnmsg = srv.find_channel(channel.id)
+        if chn is None:
+            raise NotSub
 
-        vk_pool = AsyncVkExecuteRequestPool()
-        groupsGetById_REQ = vk_pool.add_call('groups.getById', ctx.vk_token, self.grp_call_attrs | {'group_id': ctx.wall_id})
-        usersGet_REQ = vk_pool.add_call('users.get', ctx.vk_token, self.usr_call_attrs | {'user_ids': ctx.wall_id})
-        await vk_pool.execute()
+        select_options = list()
+        walls = list()
+        async with AsyncVkExecuteRequestPool() as vk_pool:
+            for sub in chn.subscriptions:
+                if sub.wall.id < 0:
+                    walls.append({'wall_REQ': vk_pool.add_call('groups.getById', ctx.bot_usr.token, self.groups_getById_attrs | {'group_id': abs(sub.wall.id)})})
+                else:
+                    walls.append({'wall_REQ': vk_pool.add_call('users.get', ctx.bot_usr.token, self.users_get_attrs | {'user_ids': sub.wall.id})})
+        for wall in walls:
+            wall_REQ = wall['wall_REQ']
+            if wall_REQ.ok:
+                wall['wrapped'] = VKRespWrapper(wall_REQ.result[0])
+                if len(wall['wrapped'].name) > 100:
+                    wall['wrapped'].name = f'{wall["wrapped"].name[:99]}…'
+                select_options.append(create_select_option(label=wall['wrapped'].name, emoji='🔘', value=str(wall['wrapped'].id), description=f"{wall['wrapped'].wall['screen_name']}"))
+        select = create_select(options=select_options, placeholder='Select the Wall', min_values=1, max_values=1)
+        action_row = create_actionrow(select)
 
-        if groupsGetById_REQ.ok:
-            groupsGetById_RESP = groupsGetById_REQ.result
-            ctx.grp_REQ = vk_pool.add_call('wall.get', ctx.vk_token, self.grp_call_attrs | {'owner_id': -groupsGetById_RESP[0]['id']})
-        else:
-            ctx.grp_ERR = groupsGetById_REQ.error
-        if usersGet_REQ.ok:
-            usersGet_RESP = usersGet_REQ.result
-            ctx.usr_REQ = vk_pool.add_call('wall.get', ctx.vk_token, self.usr_call_attrs | {'owner_id': usersGet_RESP[0]['id']})
-        else:
-            ctx.usr_ERR = usersGet_REQ.error
-        await vk_pool.execute()
+        ctx.msg = await ctx.send(content='Select the Wall you want to manage', components=[action_row])
+        dropdown = await wait_for_component(self.client, components=action_row, check=lambda btn_ctx: btn_ctx.author_id == ctx.author_id, timeout=120.0)
+        await dropdown.defer(edit_origin=True)
+        wall_id = int(dropdown.selected_options[0])
 
-        if not ctx.grp_ERR:
-            if ctx.grp_REQ.ok:
-                ctx.grp_RESP = ctx.grp_REQ.result
-                if len(ctx.grp_RESP['items']) > 0:
-                    if ctx.grp_RESP['items'][0].get('is_pinned', False):
-                        ctx.grp_REQ = vk_pool.add_call('wall.get', ctx.vk_token, self.grp_call_attrs | {'owner_id': -groupsGetById_RESP[0]['id'], 'offset': 1})
-                        await vk_pool.execute()
-                        ctx.grp_RESP = ctx.grp_REQ.result
-                if len(ctx.grp_RESP['items']) == 0:
-                    ctx.grp_RESP = {'items': [{'id': 0, 'owner_id': -groupsGetById_RESP[0]['id']}], 'groups': groupsGetById_RESP}
-            else:
-                ctx.grp_ERR = ctx.grp_REQ.error
+        subs, _ = chn.find_subs(wall_id, wall_type=True)
+        sub = subs[0]
+        for wall in walls:
+            if wall_id == wall['wrapped'].id:
+                wrapped = wall['wrapped']
+                break
 
-        if not ctx.usr_ERR:
-            if ctx.usr_REQ.ok:
-                ctx.usr_RESP = ctx.usr_REQ.result
-                if len(ctx.usr_RESP['items']) > 0:
-                    if ctx.usr_RESP['items'][0].get('is_pinned', False):
-                        ctx.usr_REQ = vk_pool.add_call('wall.get', ctx.vk_token, self.usr_call_attrs | {'owner_id': usersGet_RESP[0]['id'], 'offset': 1})
-                        await vk_pool.execute()
-                        ctx.usr_RESP = ctx.usr_REQ.result
-                if len(ctx.usr_RESP['items']) == 0:
-                    ctx.usr_RESP = {'items': [{'id': 0, 'owner_id': usersGet_RESP[0]['id'], 'offset': 1}], 'profiles': usersGet_RESP}
-            else:
-                ctx.usr_ERR = ctx.grp_REQ.error
-        
-        if not ctx.grp_ERR:
-            ctx.grp_POST = ctx.grp_RESP['items'][0]
-            ctx.wall_id = abs(ctx.grp_POST['owner_id'])
-            for grp_WALL in ctx.grp_RESP['groups']:
-                if grp_WALL['id'] == ctx.wall_id:
-                    ctx.grp_WALL = grp_WALL
-                    break
-            ctx.grp_NAME = ctx.grp_WALL['name']
-            ctx.grp_EMBED = compile_wall_embed(ctx.grp_WALL)
-
-        if not ctx.usr_ERR:
-            ctx.usr_POST = ctx.usr_RESP['items'][0]
-            ctx.wall_id = ctx.usr_POST['owner_id']
-            for usr_WALL in ctx.usr_RESP['profiles']:
-                if usr_WALL['id'] == ctx.wall_id:
-                    ctx.usr_WALL = usr_WALL
-                    break
-            ctx.usr_NAME = f"{ctx.usr_WALL['first_name']} {ctx.usr_WALL['last_name']}"
-            ctx.usr_EMBED = compile_wall_embed(ctx.usr_WALL)
-
-    async def setup_wall(self, ctx, logmsg, usr, mode):
-        if mode == 'grp':
-            wall_id = -ctx.wall_id
-            name = ctx.grp_NAME
-            post = ctx.grp_POST
-            embed = ctx.grp_EMBED
-        else:
-            wall_id = ctx.wall_id
-            name = ctx.usr_NAME
-            post = ctx.usr_POST
-            embed = ctx.usr_EMBED
+        sub_embed = discord.Embed.from_dict(deepcopy(wrapped.embed.to_dict()))
+        sub_embed.add_field(
+            name='Added by',
+            value=self.client.get_user(sub.user.id).mention,
+            inline=False)
+        sub_embed.add_field(
+            name='Notification message',
+            value=sub.msg if sub.msg is not None else 'None',
+            inline=False)
 
         buttons = [create_button(
-                style=ButtonStyle.green, label='Yes', custom_id='yes'),
+                style=ButtonStyle.blue, label='Change notification message', emoji='📝', custom_id='change'),
             create_button(
-                style=ButtonStyle.red, label='No', custom_id='no')]
+                style=ButtonStyle.red, label='Delete subscription', emoji='🗑️', custom_id='delete')]
         action_row = create_actionrow(*buttons)
-        if hasattr(ctx, 'msg'):
-            await ctx.msg.edit(content='Is this the wall you requested?', embed=embed, components=[action_row])
+
+        await ctx.msg.edit(content='Subscription details', embeds=[sub_embed], components=[action_row])
+        try:
+            button = await wait_for_component(self.client, components=action_row, check=lambda btn_ctx: btn_ctx.author_id == ctx.author_id, timeout=120.0)
+        except TimeoutError:
+            buttons = [create_button(
+                    style=ButtonStyle.blue, label='Change notification message (Timeout)', emoji='📝', disabled=True),
+                create_button(
+                    style=ButtonStyle.red, label='Delete subscription (Timeout)', emoji='🗑️', disabled=True)]
+            action_row = create_actionrow(*buttons)
+
+            await ctx.msg.edit(content='Subsctiption details', embeds=[sub_embed], components=[action_row])
         else:
-            ctx.msg = await ctx.send(content='Is this the wall you requested?', embed=embed, components=[action_row])
-        button = await wait_for_component(self.client, components=action_row, check=lambda btn_ctx: btn_ctx.author_id == ctx.author_id, timeout=120.0)
-        await button.defer(edit_origin=True)
+            await button.defer(edit_origin=True)
 
-        if button.custom_id == 'yes':
-            srv, srvmsg = self.repcog.Server.find_by_args(ctx.guild.id)
-            logmsg += f'{srvmsg}\n'
-            chn, chnmsg = srv.find_channel(ctx.webhook_channel.id)
-            if ctx.subcommand_name == 'add':
-                if chn is None:
-                    chn, chnmsg = await srv.Channel_add(ctx.webhook_channel)
+            if button.custom_id == 'change':
+                await ctx.msg.edit(content='Reply with the text you want to be in the notification message (255 chars max).\nSend `None` if you want the message to be empty.',
+                    embeds=[], components=[])
+                m = await self.client.wait_for('message', check=
+                    lambda m: m.reference is not None and m.reference.message_id == ctx.msg.id and m.author.id == ctx.author.id, timeout=120.0)
+                submsg = await sub.change_msg(m.content)
+                await m.delete()
+                sub_embed.set_field_at(5,
+                    name='Notification message',
+                    value=sub.msg if sub.msg is not None else 'None',
+                    inline=False)
+                await ctx.msg.edit(content='📝 Successfully changed the notification message!', embeds=[sub_embed], components=[])
                 logmsg += f'\t{chnmsg}\n'
-                subs, _ = chn.find_subs(wall_id, True)
-                if len(subs) == 0:
-                    wall, wallmsg = self.repcog.Wall.find_by_args(wall_id)
-                    if wall is None:
-                        wall, wallmsg = await self.repcog.Wall_add(wall_id, post['id'])
-                    
-                    buttons = [create_button(
-                            style=ButtonStyle.green, label='Yes', custom_id='yes'),
-                        create_button(
-                            style=ButtonStyle.red, label='No', custom_id='no')]
-                    action_row = create_actionrow(*buttons)
-                    await ctx.msg.edit(content=f'Would you like to set a message to be sent with new posts?', components=[action_row], embed=None)
-                    button = await wait_for_component(self.client, components=action_row, check=lambda btn_ctx: btn_ctx.author_id == ctx.author_id, timeout=120.0)
-                    await button.defer(edit_origin=True)
-
-                    if button.custom_id == 'yes':
-                        await ctx.msg.edit(content=f'Reply with the text you want to be in the notification message (255 chars max)', components=[], embed=None)
-                        m = await self.client.wait_for('message', check=
-                            lambda m: m.reference is not None and m.reference.message_id == ctx.msg.id and m.author.id == ctx.author.id, timeout=120.0)
-                        msg = m.content
-                        if len(msg) > 255:
-                            raise MsgTooLong
-                        await m.delete()
-                    else:
-                        msg = None
-                    
-                    sub, submsg = await chn.Subscription_add(wall, usr, msg)
-                    logmsg += f'\t\t{submsg}\n{wallmsg}\n'
-                else:
-                    raise SubExists
-                await ctx.msg.edit(content=f'✅ Successfully subscribed {ctx.webhook_channel.mention} to **{name}** wall!', components=[], embed=None)
-                self.logger.info('Add {aa}SUB{aa} {tttpy}\n{msg} {ttt}'.format_map(SafeDict(msg=logmsg)))
-
-            elif ctx.subcommand_name == 'del':
+                logmsg += f'\t\t{submsg}\n'
+                self.logger.info('Change msg {aa}SUB{aa} {tttpy}\n{msg} {ttt}'.format_map(SafeDict(msg=logmsg)))
+            else:
                 if len(chn.subscriptions) == 1:
                     chnmsg = await chn.delete()
                     logmsg += f'\t{chnmsg}\n'
                 else:
                     logmsg += f'\t{chnmsg}\n'
-                    sub, submsg = chn.find_subs(wall_id, wall_type=True)
+                    submsg = await sub.delete()
                     logmsg += f'\t\t{submsg}\n'
-                    await sub[0].delete()
 
-                wall, wallmsg = self.repcog.Wall.find_by_args(wall_id)
+                wall, wallmsg = self.repcog.Wall.find_by_args(wrapped.id)
                 if len(wall.subscriptions) == 0:
                     wallmsg = await wall.delete()
                 logmsg += f'{wallmsg}\n'
-                await ctx.msg.edit(content=f'✅ Successfully unsubscrubed {ctx.webhook_channel.mention} from **{name}** wall!', components=[], embed=None)
+                await ctx.msg.edit(content=f'🗑️ Successfully unsubscrubed {ctx.webhook_channel.mention} from this wall!', embeds=[wrapped.embed], components=[])
                 self.logger.info('Del {aa}SUB{aa} {tttpy}\n{msg} {ttt}'.format_map(SafeDict(msg=logmsg)))
-
-        else:
-            await ctx.msg.edit(content='❌ Cancelled', embed=None, components=[])
     
     @cog_ext.cog_subcommand(base='subs', name='account',
                             description='Login with VK and show account you are logged in',
                             guild_ids=None if sets['version'] == 'MAIN' else [sets['srvcSrv']])
     @commands.bot_has_permissions(manage_webhooks=True, send_messages=True, embed_links=True, add_reactions=True, manage_messages=True, read_message_history=True)
-    async def account(self, ctx):
+    async def account(self, ctx: SlashContext):
         logmsg = str()
         ctx.usr, _ = self.repcog.User.find_by_args(ctx.author.id)
         if ctx.usr is None:
