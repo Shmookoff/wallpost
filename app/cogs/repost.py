@@ -366,14 +366,6 @@ class Repost(commands.Cog):
                 if is_called:
                     pass
                 else:
-                    async with ClientSession() as session:
-                        try: await discord.Webhook.from_url(url=self.webhook_url, adapter=discord.AsyncWebhookAdapter(session)).delete()
-                        except discord_errors.Forbidden as exc:
-                            if exc.code == 50013:
-                                raise commands.BotMissingPermissions(['manage_webhooks'])
-                            raise
-                        except discord_errors.NotFound as exc:
-                            pass
                     async with aiopg.connect(sets["psqlUri"]) as conn:
                         async with conn.cursor(cursor_factory=DictCursor) as cur:
                             await cur.execute("DELETE FROM channel WHERE id = %s", (self.id,))
