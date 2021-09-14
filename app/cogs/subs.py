@@ -133,8 +133,8 @@ class Subscriptions(commands.Cog):
         for req in reqs:
             if req['wall_REQ'].ok:
                 req['wall_RESP'] = req['wall_REQ'].result
-                if req['wall_RESP'][0]['id'] < 0:
-                    req['id'] = abs(req['wall_RESP'][0]['id'])
+                if 'name' in req['wall_RESP'][0]:
+                    req['id'] = -req['wall_RESP'][0]['id']
                 else:
                     req['id'] = req['wall_RESP'][0]['id']
                 req['post_REQ'] = vk_pool.add_call('wall.get', ctx.bot_usr.token, self.wall_get_attrs | {'owner_id': req['id']})
@@ -158,7 +158,7 @@ class Subscriptions(commands.Cog):
                 req['post_RESP'] = req['post_REQ'].result
                 if len(req['post_RESP']['items']) == 0:
                     req['post_RESP'] = {'items': [{'id': 0}]}
-        #Wrap and return
+        #Wrap
                 wrapped = VKRespWrapper(req['wall_RESP'][0], req['post_RESP']['items'][0])
                 if wrapped.type == 'grp':
                     grp = wrapped
