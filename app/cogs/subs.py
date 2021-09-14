@@ -251,7 +251,7 @@ class Subscriptions(commands.Cog):
                     inline=False)
                 sub_embed.add_field(
                     name='Notification message',
-                    value=sub.msg if sub.msg is not None else 'None',
+                    value=sub.msg if sub.msg is not None else '`None`',
                     inline=False)
                 
                 logmsg += f'\t\t{submsg}\n{wallmsg}\n'
