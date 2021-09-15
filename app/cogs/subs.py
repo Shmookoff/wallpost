@@ -396,7 +396,7 @@ class Subscriptions(commands.Cog):
             return
 
         async with AsyncVkExecuteRequestPool() as pool:
-            usr_REQ = pool.add_call('users.get', ctx.usr.token, self.usr_call_attrs)
+            usr_REQ = pool.add_call('users.get', ctx.usr.token, self.users_get_attrs)
         usr_RESP = usr_REQ.result
         embed = compile_wall_embed(usr_RESP[0])
 
