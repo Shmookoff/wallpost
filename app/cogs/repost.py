@@ -194,7 +194,7 @@ class Repost(commands.Cog):
                                     if isinstance(exc, AttributeError):
                                         sub.channel.delete()
                                     elif isinstance(exc, discord_errors.Forbidden):
-                                        pass
+                                        await self.cog.client.error_handler('repost_task', usr=self, exc=exc)
                                     else:
                                         raise
                                 else:
