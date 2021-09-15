@@ -14,6 +14,7 @@ from psycopg2.extras import DictCursor
 from copy import deepcopy
 from cryptography.fernet import Fernet
 
+from app.cogs.repost import Repost
 from rsc.config import sets
 from rsc.functions import compile_wall_embed, vk
 from rsc.classes import SafeDict, VKRespWrapper
@@ -27,7 +28,7 @@ class Subscriptions(commands.Cog):
         self.client = client
         self.logger = self.client.logger
         self.loop = self.client.loop
-        self.repcog = self.client.get_cog('Repost')
+        self.repcog: Repost = self.client.get_cog('Repost')
         self.loop.create_task(self.ainit())
 
         msg = f'Load COG {self.__name__}'
@@ -256,7 +257,7 @@ class Subscriptions(commands.Cog):
                 
                 logmsg += f'\t\t{submsg}\n{wallmsg}\n'
             else:
-                raise SubExists
+                raise SubExists(channel, wall_id)
             await ctx.msg.edit(content=f'✅ Successfully subscribed {channel.mention} to this wall!', embeds=[sub_embed], components=[])
             self.logger.info('Add {aa}SUB{aa} {tttpy}\n{msg} {ttt}'.format_map(SafeDict(msg=logmsg)))
         else:
@@ -286,7 +287,7 @@ class Subscriptions(commands.Cog):
         logmsg += f'{srvmsg}\n'
         chn, chnmsg = srv.find_channel(channel.id)
         if chn is None:
-            raise NoSubs
+            raise NoSubs(channel)
 
         select_options = list()
         walls = list()

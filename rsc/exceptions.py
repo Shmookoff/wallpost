@@ -1,16 +1,17 @@
-class PrefixGreaterThan3(Exception): pass
-class ChannelNotSpecified(Exception): pass
-class ChannelForbiddenWebhooks(Exception): pass
-class MaximumWebhooksReached(Exception): pass
-class VkIdNotSpecified(Exception): pass
+from discord import TextChannel
+
 class CouldNotFindWall(Exception):
-    def __init__(self, grp, usr):
+    def __init__(self, grp: dict, usr: dict):
         self.grp_msg = grp['error_msg']
         self.usr_msg = usr['error_msg']
-class WallIdBadArgument(Exception): pass
-class SubExists(Exception): pass
-class NoSubs(Exception): pass
-class NotSub(Exception): pass
+class SubExists(Exception):
+    def __init__(self, chn: TextChannel, wall_id: int):
+        self.chn = chn
+        self.wall_id = wall_id
+class NoSubs(Exception):
+    def __init__(self, chn: TextChannel):
+        self.chn = chn
 class NotAuthenticated(Exception): pass
-class WallClosed(Exception): pass
-class MsgTooLong(Exception): pass
+class MsgTooLong(Exception):
+    def __init__(self, msg: str):
+        self.msg = msg

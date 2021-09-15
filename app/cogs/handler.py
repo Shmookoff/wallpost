@@ -48,35 +48,28 @@ class ExceptionHandler(commands.Cog):
         if ctx.name == 'subs':
             if isinstance(exc, asycnio_exceptions.TimeoutError):
                 await ctx.msg.clear_reactions()
-                await ctx.msg.edit(content='❌ Cancelled (timeout)', components=[], embed=None)
+                await ctx.msg.edit(content='❌ Cancelled (timeout)', embed=None, components=[])
                 return
 
             if ctx.subcommand_name == 'account':
                 pass
             elif ctx.subcommand_name == 'add':
                 if isinstance(exc, SubExists):
-                    exc.embed = set_error_embed(f'{ctx.webhook_channel.mention} is already subscribed to wall **{ctx.kwargs["wall_id"]}**.')
-                elif isinstance(exc, MsgTooLong):
-                    exc.embed = set_error_embed(f'Message is too long.')
+                    exc.embed = set_error_embed(f'{exc.chn.mention} is already subscribed to wall **{exc.wall_id}**.')
             elif ctx.subcommand_name == 'manage':
                 if isinstance(exc, NoSubs):
-                    exc.embed = set_error_embed(f'{ctx.webhook_channel.mention} doesn\'t have any subscriptions.')
-                elif isinstance(exc, MsgTooLong):
-                    exc.embed = set_error_embed(f'Message is too long.')
-                elif isinstance(exc, NotSub):
-                    exc.embed = set_error_embed(f'{ctx.webhook_channel.mention} isn\'t subscribed to wall **{ctx.kwargs["wall_id"]}**.')
+                    exc.embed = set_error_embed(f'{exc.chn.mention} doesn\'t have any subscriptions.')
         elif ctx.name == 'cogs':
             if isinstance(exc, slash_errors.CheckFailure):
                 exc.embed = set_error_embed(f'No 🙂')
             
         if not hasattr(exc, 'embed'):
             if isinstance(exc, NotAuthenticated):
-                exc.embed = set_error_embed(f'You aren\'t authenticated.\n\n> Use `/subs link` to link your VK profile.')
+                exc.embed = set_error_embed(f'You aren\'t authenticated.\n\n> Use `/subs account` to login with your VK profile.')
+            elif isinstance(exc, MsgTooLong):
+                exc.embed = set_error_embed(f'Message is too long.\n\nOriginal message:\n>>> {exc.msg}')
             elif isinstance(exc, aiovk_errors.VkAuthError):
-                exc.embed = set_error_embed('Can\'t gain access to your VK account.\n\n> Use `/subs link` to relink your VK profile.')
-            elif isinstance(exc, WallIdBadArgument):
-                exc.embed = set_error_embed(f'VK Wall ID is invalid.\n\n>>> **{ctx.kwargs["wall_id"]}** isn\'t a valid VK Wall ID.\nPlease, specify `[wall_id]` as **String**')
-                exc.command_and_example = True
+                exc.embed = set_error_embed('Can\'t gain access to your VK account.\n\n> Use `/subs account` to relogin with your VK profile.')
             elif isinstance(exc, commands.BotMissingPermissions):
                 exc.embed = set_error_embed(f'Bot is missing permission(s).\n\n> {exc}')
             elif isinstance(exc, commands.MissingPermissions):
@@ -87,9 +80,9 @@ class ExceptionHandler(commands.Cog):
                 add_command_and_example(ctx, exc.embed)
 
             if hasattr(ctx, 'msg'):
-                await ctx.msg.edit(content=None, embed=exc.embed, components=[])
+                await ctx.msg.edit(content=None, embeds=[exc.embed], components=[])
             else:
-                await ctx.send(embed=exc.embed)
+                await ctx.send(embeds=[exc.embed])
         else:
             await self.client.error_handler('slash_command', ctx=ctx, exc=exc)
 
