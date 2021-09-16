@@ -165,43 +165,43 @@ class Repost(commands.Cog):
                 self.task_walls = dict()
                 for sub in self.task_subs:
                     if sub.wall.id not in self.task_walls:
-                        self.task_walls[sub.wall.id] = {'wall': sub.wall, 'subs': set(), 'req': None, 'empty': False}
+                        self.task_walls[sub.wall.id] = {'wall': sub.wall, 'subs': set(), 'post_REQ': None, 'ERR': None, 'empty': False}
                     self.task_walls[sub.wall.id]['subs'].add(sub)
             # Req for posts
             for wall_id in self.task_walls:
-                self.task_walls[wall_id]['req'] = self.vk_pool.add_call('wall.get', self.token, {
+                self.task_walls[wall_id]['post_REQ'] = self.vk_pool.add_call('wall.get', self.token, {
                     'owner_id': wall_id, 'extended': 1, 'count': 1, 'fields': 'photo_max', 'v': '5.84'})
             await self.vk_pool.execute()
             # Offset req for pinned posts
             for wall_id in self.task_walls:
-                resp = self.task_walls[wall_id]['req'].result
+                resp = self.task_walls[wall_id]['post_REQ'].result
                 if len(resp['items']) > 0:
                     if resp['items'][0].get('is_pinned', False):
-                        self.task_walls[wall_id]['req'] = self.vk_pool.add_call('wall.get', self.token, {
+                        self.task_walls[wall_id]['post_REQ'] = self.vk_pool.add_call('wall.get', self.token, {
                             'owner_id': wall_id, 'extended': 1, 'offset': 1, 'count': 1, 'fields': 'photo_max', 'v': '5.84'})
             await self.vk_pool.execute()
             # Disable empty walls
             for wall_id in self.task_walls:
-                resp = self.task_walls[wall_id]['req'].result
+                resp = self.task_walls[wall_id]['post_REQ'].result
                 if len(resp['items']) == 0:
                     self.task_walls[wall_id]['empty'] = True
             msg = f'{self}\n'
             for wall_id in self.task_walls:
                 if not self.task_walls[wall_id]['empty']:
-                    resp = self.task_walls[wall_id]['req'].result
+                    resp = self.task_walls[wall_id]['post_REQ'].result
                     # If post is new
                     if resp['items'][0]['id'] > self.task_walls[wall_id]['wall'].last_id:
                         new_post = True
                         post_embed = compile_post_embed(resp)
                         for sub in self.task_walls[wall_id]['subs']:
-                                dc_chn = self.cog.client.get_channel(sub.channel.id)
+                                dc_chn = self.client.get_channel(sub.channel.id)
                                 try:
                                     await dc_chn.send(content=sub.msg, embed=post_embed)
                                 except Exception as exc:
                                     if isinstance(exc, AttributeError):
-                                        sub.channel.delete()
+                                        await sub.channel.delete()
                                     elif isinstance(exc, discord_errors.Forbidden):
-                                        await self.cog.client.error_handler('repost_task', usr=self, exc=exc)
+                                        await self.client.error_handler('repost_task', usr=self, exc=exc)
                                     else:
                                         raise
                                 else:
@@ -213,19 +213,19 @@ class Repost(commands.Cog):
                                 await cur.execute("UPDATE wall SET last_id = %s WHERE id = %s", (self.task_walls[wall_id]['wall'].last_id, self.task_walls[wall_id]['wall'].id))
             
             if new_post:
-                self.cog.client.logger.info('Task {aa}USR{aa} {tttpy}\n{msg} {ttt}'.format_map(SafeDict(msg=msg)))
+                self.client.logger.info('Task {aa}USR{aa} {tttpy}\n{msg} {ttt}'.format_map(SafeDict(msg=msg)))
             self.sleep_on_error = 30
 
         @repost_task.before_loop
         async def before_repost_task(self):
-            await self.cog.client.wait_until_ready()
+            await self.client.wait_until_ready()
             self.task_walls = dict()
             self.task_subs = set()
             self.vk_pool = AsyncVkExecuteRequestPool()
 
         @repost_task.error
         async def error_repost_task(self, exc):
-            await self.cog.client.error_handler('repost_task', usr=self, exc=exc)
+            await self.client.error_handler('repost_task', usr=self, exc=exc)
             await asyncio.sleep(self.sleep_on_error)
             self.sleep_on_error += 30
             self.repost_task.restart()
