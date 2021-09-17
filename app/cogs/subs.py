@@ -391,13 +391,12 @@ class Subscriptions(commands.Cog):
             ctx.usr, usrmsg = await self.repcog.User_add(ctx.author.id)
             logmsg += f'{usrmsg}\n'
             self.logger.info('Add {aa}USR{aa} {tttpy}\n{msg} {ttt}'.format_map(SafeDict(msg=logmsg)))
-        token = ctx.usr.token
-        if token is None:
+        if ctx.usr.token is None:
             await self.login(ctx)
             return
 
         async with AsyncVkExecuteRequestPool() as pool:
-            usr_REQ = pool.add_call('users.get', ctx.usr.token, self.usr_call_attrs)
+            usr_REQ = pool.add_call('users.get', ctx.usr.token, self.users_get_attrs)
         usr_RESP = usr_REQ.result
         embed = compile_wall_embed(usr_RESP[0])
 
