@@ -166,10 +166,9 @@ class Repost(commands.Cog):
                 wall = self.task_walls[wall_id]
                 if wall['post_REQ'].ok:
                     wall['post_RESP'] = wall['post_REQ'].result
-                    if len(wall['post_RESP']['items']) > 0:
-                        if wall['post_RESP']['items'][0].get('is_pinned', False):
-                            wall['post_REQ'] = self.vk_pool.add_call('wall.get', self.token, {
-                                'owner_id': wall_id, 'extended': 1, 'offset': 1, 'count': 1, 'fields': 'photo_max', 'v': '5.84'})
+                    if (len(wall['post_RESP']['items']) > 0) and (wall['post_RESP']['items'][0].get('is_pinned', False)):
+                        wall['post_REQ'] = self.vk_pool.add_call('wall.get', self.token, {
+                            'owner_id': wall_id, 'extended': 1, 'offset': 1, 'count': 1, 'fields': 'photo_max', 'v': '5.84'})
                 else:
                     wall['ERR'] = wall['post_REQ'].error
             await self.vk_pool.execute()
@@ -180,55 +179,52 @@ class Repost(commands.Cog):
                 if not wall['ERR']:
                     if wall['post_REQ'].ok:
                         resp = wall['post_REQ'].result
-                        #Check if wall is not empty
-                        if len(resp['items']) > 0:
-                            resp = wall['post_REQ'].result
-                            # If post is new
-                            if resp['items'][0]['id'] > wall['wall_obj'].last_id:
-                                new_post = True
-                                wrapped = VKRespWrapper(post=resp, vk_info=self.client.vk_info)
-                                #Send messages
-                                msg += f'\t{wall["wall_obj"]}\n'
-                                for sub in wall['subs']:
-                                    if not sub.channel.disabled:
-                                        dc_chn = self.client.get_channel(sub.channel.id)
-                                        try:
-                                            await dc_chn.send(content=sub.msg, embed=wrapped.post_embed)
-                                        except Exception as exc:
-                                            if isinstance(exc, AttributeError):
-                                                submsg = await sub.channel.delete(intents=2)
-                                                msg += submsg
-                                            elif isinstance(exc, discord_errors.Forbidden):
-                                                bot_perms = dc_chn.permissions_for(dc_chn.guild.me)
-                                                required_perms = {'send_messages': True, 'embed_links': True}
-                                                missing_perms = [perm for perm, value in required_perms.items() if getattr(bot_perms, perm) != value]
-                                                if missing_perms:
-                                                    missing = [perm.replace('_', ' ').replace('guild', 'server').title() for perm in missing_perms]
-                                                    if len(missing) > 2:
-                                                        fmt = '{}, and {}'.format(", ".join(missing[:-1]), missing[-1])
-                                                    else:
-                                                        fmt = ' and '.join(missing)
-
-                                                    users_id = set()
-                                                    for sub_ in sub.channel.subscriptions:
-                                                        users_id.add(sub_.user.id)
-                                                    for user_id in users_id:
-                                                        dc_user = self.client.get_user(user_id)
-                                                        await dc_user.send(content=f"Couldn\'t repost to {dc_chn.mention} due to lack of permissions.\n" \
-                                                            "Channel Subscriptions are temporarily disabled.\n" \
-                                                            f"In order to enable them, give the Bot following permissions: `{fmt}`, and use `/subs manage` on the Channel.")
-                                                    sub.channel.disabled = True
+                        #Check if wall is not empty and post is new
+                        if len(resp['items']) > 0 and resp['items'][0]['id'] > wall['wall_obj'].last_id:
+                            new_post = True
+                            wrapped = VKRespWrapper(post=resp, vk_info=self.client.vk_info)
+                            #Send messages
+                            msg += f'\t{wall["wall_obj"]}\n'
+                            for sub in wall['subs']:
+                                if not sub.channel.disabled:
+                                    dc_chn = self.client.get_channel(sub.channel.id)
+                                    try:
+                                        await dc_chn.send(content=sub.msg, embed=wrapped.post_embed)
+                                    except Exception as exc:
+                                        if isinstance(exc, AttributeError):
+                                            submsg = await sub.channel.delete(intents=2)
+                                            msg += submsg
+                                        elif isinstance(exc, discord_errors.Forbidden):
+                                            bot_perms = dc_chn.permissions_for(dc_chn.guild.me)
+                                            required_perms = {'send_messages': True, 'embed_links': True}
+                                            missing_perms = [perm for perm, value in required_perms.items() if getattr(bot_perms, perm) != value]
+                                            if missing_perms:
+                                                missing = [perm.replace('_', ' ').replace('guild', 'server').title() for perm in missing_perms]
+                                                if len(missing) > 2:
+                                                    fmt = '{}, and {}'.format(", ".join(missing[:-1]), missing[-1])
                                                 else:
-                                                    raise
+                                                    fmt = ' and '.join(missing)
+
+                                                users_id = set()
+                                                for sub_ in sub.channel.subscriptions:
+                                                    users_id.add(sub_.user.id)
+                                                for user_id in users_id:
+                                                    dc_user = self.client.get_user(user_id)
+                                                    await dc_user.send(content=f"Couldn\'t repost to {dc_chn.mention} due to lack of permissions.\n" \
+                                                        "Channel Subscriptions are temporarily disabled.\n" \
+                                                        f"In order to enable them, give the Bot following permissions: `{fmt}`, and use `/subs manage` on the Channel.")
+                                                sub.channel.disabled = True
                                             else:
                                                 raise
                                         else:
-                                            msg += f'\t\t{sub}\n'
-                                wall['wall_obj'].last_id = wrapped.post['items'][0]['id']
-                                async with aiopg.connect(sets["psqlUri"]) as conn:
-                                    async with conn.cursor(cursor_factory=DictCursor) as cur:
-                                        await cur.execute("UPDATE wall SET last_id = %s WHERE id = %s", (
-                                            wall['wall_obj'].last_id, wall['wall_obj'].id))
+                                            raise
+                                    else:
+                                        msg += f'\t\t{sub}\n'
+                            wall['wall_obj'].last_id = wrapped.post['items'][0]['id']
+                            async with aiopg.connect(sets["psqlUri"]) as conn:
+                                async with conn.cursor(cursor_factory=DictCursor) as cur:
+                                    await cur.execute("UPDATE wall SET last_id = %s WHERE id = %s", (
+                                        wall['wall_obj'].last_id, wall['wall_obj'].id))
                     else:
                         wall['ERR'] = wall['post_REQ'].error
 
@@ -428,6 +424,7 @@ class Repost(commands.Cog):
                                 sub.wall.id, sub.user.id, sub.channel.id, sub.msg))
                             sub.id = (await cur.fetchone())['id']
                     msg = f'Add {sub}'
+
                     return sub, msg
 
                 async def delete(self):
