@@ -75,7 +75,7 @@ def compile_post_embed(resp, wall1=None) -> discord.Embed:
         embed = discord.Embed(
             title = sets["embedTitle"],
             url = f'https://vk.com/wall{post["owner_id"]}_{post["id"]}',
-            description = post['text'],
+            description = post['text'] if len(post['text']) <= 4096 else f"{post['text'][:4095]}…",
             timestamp = datetime.utcfromtimestamp(post['date']),
             color = sets["embedColor"]
         )
@@ -129,22 +129,23 @@ def compile_post_embed(resp, wall1=None) -> discord.Embed:
                 break
 
     if 'copy_history' in post: 
-        copy = post['copy_history'][0]
+        repost = post['copy_history'][0]
 
-        if copy['text'] != '':
+        if repost['text'] != '':
+            repost['text'] = repost['text'] if len(repost['text']) <= 900 else f"{repost['text'][:900]}…"
             embed.add_field(
                 name = '↪️ Repost',
-                value = f'[**Open repost**](https://vk.com/wall{copy["owner_id"]}_{copy["id"]})\n>>> {copy["text"]}'
+                value = f'[**Open repost**](https://vk.com/wall{repost["owner_id"]}_{repost["id"]})\n>>> {repost["text"]}'
             )
         else:
             embed.add_field(
                 name = '↪️ Repost',
-                value = f'[**Open repost**](https://vk.com/wall{copy["owner_id"]}_{copy["id"]})'
+                value = f'[**Open repost**](https://vk.com/wall{repost["owner_id"]}_{repost["id"]})'
             )
         
         if not has_photo:
-            if 'attachments' in copy:
-                for attachment in copy['attachments']:
+            if 'attachments' in repost:
+                for attachment in repost['attachments']:
                     if attachment['type'] == 'photo':
                         hw = 0
                         image_url = ''
