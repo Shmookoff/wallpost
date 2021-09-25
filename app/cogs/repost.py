@@ -278,13 +278,20 @@ class Repost(commands.Cog):
 
         async def delete(self):
             msg = f'Del {self}'
+            for chn in self.channels.copy():
+                msg += f'\n\tDel {chn}'
+                for sub in chn.subscriptions.copy():
+                    msg += f'\n\tDel {sub}'
+                    sub.channel.subscriptions.remove(sub)
+                    sub.wall.subscriptions.remove(sub)
+                    sub.user.subscriptions.remove(sub)
+                    Repost.Server.Channel.Subscription.all_.remove(sub)
+                self.channels.remove(chn)
+                Repost.Server.Channel.all_.remove(chn)
+            Repost.Server.all_.remove(self)
             async with aiopg.connect(sets["psqlUri"]) as conn:
                 async with conn.cursor(cursor_factory=DictCursor) as cur:
                     await cur.execute("DELETE FROM server WHERE id = %s", (self.id,))
-            for chn in self.channels.copy():
-                await chn.delete(is_called=True)
-                msg += f'\nDel {chn}'
-            Repost.Server.all_.remove(self)
             Repost.logger.info('Del {aa}SRV{aa} {tttpy}\n{msg} {ttt}'.format_map(SafeDict(msg=msg)))
 
         async def set_lang(self, lang: str):
@@ -338,20 +345,20 @@ class Repost(commands.Cog):
             async def Subscription_add(self, wall: Repost.Wall, user: Repost.User, msg: str) -> tuple[Repost.Server.Channel.Subscription, str]:
                 return await Repost.Server.Channel.Subscription.add(self, wall, user, msg)
 
-            async def delete(self, is_called: bool=False):
+            async def delete(self):
+                msg = f'{self.server}\n\tDel {self}'
+                for sub in self.subscriptions.copy():
+                    msg += f'\n\t\tDel {sub}'
+                    sub.channel.subscriptions.remove(sub)
+                    sub.wall.subscriptions.remove(sub)
+                    sub.user.subscriptions.remove(sub)
+                    Repost.Server.Channel.Subscription.all_.remove(sub)
                 self.server.channels.remove(self)
                 Repost.Server.Channel.all_.remove(self)
-                for sub in self.subscriptions.copy():
-                    await sub.delete(is_called=True)
-                    msg += f'\t\t{sub}'
-                if is_called:
-                    pass
-                else:
-                    msg = f'Del {self}'
-                    async with aiopg.connect(sets["psqlUri"]) as conn:
-                        async with conn.cursor(cursor_factory=DictCursor) as cur:
-                            await cur.execute("DELETE FROM channel WHERE id = %s", (self.id,))
-                    Repost.logger.info('Del {aa}CHN{aa} {tttpy}\n{msg} {ttt}'.format_map(SafeDict(msg=msg)))
+                async with aiopg.connect(sets["psqlUri"]) as conn:
+                    async with conn.cursor(cursor_factory=DictCursor) as cur:
+                        await cur.execute("DELETE FROM channel WHERE id = %s", (self.id,))
+                Repost.logger.info('Del {aa}CHN{aa} {tttpy}\n{msg} {ttt}'.format_map(SafeDict(msg=msg)))
 
             def eq_by_args(self, other_id: int):
                 return self.id == other_id
@@ -423,20 +430,17 @@ class Repost(commands.Cog):
                     msg = f'Add {sub}'
                     return sub, msg
 
-                async def delete(self, is_called: bool=False) -> str:
-                    msg = f'Del {self}'
-                    if is_called:
-                        pass
-                    else:
-                        async with aiopg.connect(sets["psqlUri"]) as conn:
-                            async with conn.cursor(cursor_factory=DictCursor) as cur:
-                                await cur.execute("DELETE FROM subscription WHERE channel_id = %s AND wall_id = %s", (
-                                    self.channel.id, self.wall.id))
+                async def delete(self):
+                    msg = f'{self.channel.server}\n\t{self.channel}\n\t\tDel {self}'
                     self.channel.subscriptions.remove(self)
                     self.wall.subscriptions.remove(self)
                     self.user.subscriptions.remove(self)
                     Repost.Server.Channel.Subscription.all_.remove(self)
-                    return msg
+                    async with aiopg.connect(sets["psqlUri"]) as conn:
+                        async with conn.cursor(cursor_factory=DictCursor) as cur:
+                            await cur.execute("DELETE FROM subscription WHERE channel_id = %s AND wall_id = %s", (
+                                self.channel.id, self.wall.id))
+                    Repost.logger.info('Del {aa}SUB{aa} {tttpy}\n{msg} {ttt}'.format_map(SafeDict(msg=msg)))
                 
                 async def change_msg(self, new_msg: str) -> str:
                     if len(new_msg) > 255:
