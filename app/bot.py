@@ -3,14 +3,16 @@ from discord.ext import commands, tasks, ipc
 from discord_slash import SlashCommand
 
 import aiopg
-from psycopg2.extras import DictCursor
 import aiohttp
+import aiovk
+from psycopg2.extras import DictCursor
+from aiovk.pools import AsyncVkExecuteRequestPool
 
 import os
 import traceback
 import logging
 
-from rsc.config import sets
+from rsc.config import sets, vk_sets
 from rsc.classes import WPLoggerAdapter, WPLogger, SafeDict
 
 
@@ -22,10 +24,20 @@ class WallPost(commands.Bot):
         intents.members = True
         super().__init__(*args, intents=intents, command_prefix='.', activity=discord.Activity(name='/subs add', type=0), **kwargs)
 
+        self.loop.create_task(self.ainit())
         self.logger = WPLoggerAdapter(WPLogger(self.loop), {'tb': ''})
         self.ipc = ipc.Server(self, secret_key=sets['ipcSecretKey'])
         self.slash = SlashCommand(self, sync_commands=True, sync_on_cog_reload=True)
 
+        self.ipc.start()
+        self.remove_command('help')
+
+    async def ainit(self):
+        async with aiovk.TokenSession(vk_sets["serviceKey"]) as ses:
+            vkapi = aiovk.API(ses)
+            vk_info = await vkapi.groups.getById(group_id=22822305, v='5.84')
+        self.vk_info = {'name': vk_info[0]['name'], 'photo': vk_info[0]['photo_200']}
+        
         self.cogs_msg = '\nLoad COGs'
         try: self.load_extension('app.cogs.handler')
         except commands.ExtensionAlreadyLoaded:
@@ -38,9 +50,6 @@ class WallPost(commands.Bot):
                 try: self.load_extension(f'app.cogs.{filename[:-3]}')
                 except commands.ExtensionAlreadyLoaded:
                     self.reload_extension(f'app.cogs.{filename[:-3]}')
-
-        self.ipc.start()
-        self.remove_command('help')
 
     async def on_ready(self):
         self.logger.logger.add_discord_handler(logging.INFO, self.get_channel(sets['logChnId']))

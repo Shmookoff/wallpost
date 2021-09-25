@@ -1,17 +1,17 @@
 from __future__ import annotations
+from typing import Union, Optional
 
 from discord.ext import commands, tasks
 from discord import errors as discord_errors
 
 import asyncio
 import aiopg
-from aiovk.pools import AsyncVkExecuteRequestPool
+from aiovk.pools import AsyncVkExecuteRequestPool, AsyncResult
 
 from psycopg2.extras import DictCursor
 
 from rsc.config import sets, vk_sets
-from rsc.classes import SafeDict
-from rsc.functions import compile_post_embed
+from rsc.classes import SafeDict, VKRespWrapper
 from rsc.exceptions import MsgTooLong
 
 
@@ -19,7 +19,8 @@ class Repost(commands.Cog):
     __name__ = 'Repost'
 
     def __init__(self, client: commands.Bot):
-        self.client = client
+        Repost.client = client
+        Repost.logger = client.logger
 
         msg = f'Load COG {self.__name__}'
         if hasattr(self.client, 'cogs_msg'):
@@ -56,8 +57,7 @@ class Repost(commands.Cog):
     class Wall:
         all_: set[Repost.Wall] = set()
 
-        def __init__(self, client: commands.Bot, id_: int, public: bool, last_id: int):
-            self.client = client
+        def __init__(self, id_: int, public: bool, last_id: int):
             self.id = id_
             self.public = public
             self.last_id = last_id
@@ -69,48 +69,41 @@ class Repost(commands.Cog):
             return f'WALL {self.id} PUB {self.public} LAST {self.last_id}'
 
         @classmethod
-        def init(cls, client: commands.Bot, id_: int, public: bool, last_id: int) -> tuple[Repost.Wall, str]:
-            self = cls(client, id_, public, last_id)
-            msg = f'Init {self}'
-            return self, msg
-
-        @classmethod
-        async def add(cls, client: commands.Bot, id_: int, last_id: int) -> tuple[Repost.Wall, str]:
-            self = cls(client, id_, True, last_id)
+        async def add(cls, id_: int, last_id: int) -> Repost.Wall:
+            self = cls(id_, True, last_id)
             msg = f'Add {self}'
             async with aiopg.connect(sets["psqlUri"]) as conn:
                 async with conn.cursor(cursor_factory=DictCursor) as cur:
                     await cur.execute("INSERT INTO wall (id, public, last_id) VALUES(%s, %s, %s)", (
                         self.id, self.public, self.last_id))
-            return self, msg
+            Repost.logger.info('Add {aa}WALL{aa} {tttpy}\n{msg} {ttt}'.format_map(SafeDict(msg=msg)))
+            return self
 
-        async def delete(self) -> str:
+        async def delete(self):
             msg = f'Del {self}'
             async with aiopg.connect(sets["psqlUri"]) as conn:
                 async with conn.cursor(cursor_factory=DictCursor) as cur:
                     await cur.execute("DELETE FROM wall WHERE id = %s", (self.id,))
             Repost.Wall.all_.remove(self)
-            return msg
+            Repost.logger.info('Del {aa}WALL{aa} {tttpy}\n{msg} {ttt}'.format_map(SafeDict(msg=msg)))
 
         def eq_by_args(self, other_id):
             return self.id == other_id
 
         @classmethod
-        def find_by_args(cls, id_: int) -> tuple[Repost.Wall, str]:
-            wall, msg = None, str()
+        def find_by_args(cls, id_: int) -> Repost.Wall:
+            wall = None
             for _wall in cls.all_:
                 if _wall.eq_by_args(id_):
                     wall = _wall
-                    msg += f'{wall}'
                     break
-            return wall, msg
+            return wall
 
     class User:
         all_: set[Repost.User] = set()
         auth_data: list[dict] = list()
 
-        def __init__(self, client: commands.Bot, id_: int, token: str):
-            self.client = client
+        def __init__(self, id_: int, token: str):
             self.id = id_
             self.token = token
             self.subscriptions: set[Repost.Server.Channel.Subscription] = set()
@@ -123,38 +116,34 @@ class Repost(commands.Cog):
             return f'USR {self.id}'
 
         @classmethod
-        def init(cls, client: commands.Bot, id_: int, token: str) -> tuple[Repost.User, str]:
-            self = cls(client, id_, token)
-            msg = f'Init {self}'
-            return self, msg
-
-        @classmethod
-        async def add(cls, client: commands.Bot, id_: int) -> tuple[Repost.User, str]:
-            self = cls(client, id_, None)
+        async def add(cls, id_: int) -> Repost.User:
+            self = cls(id_, None)
             msg = f'Add {self}'
             async with aiopg.connect(sets["psqlUri"]) as conn:
                 async with conn.cursor(cursor_factory=DictCursor) as cur:
                     await cur.execute("INSERT INTO users (id) VALUES(%s)", (self.id,))
-            return self, msg
+            Repost.logger.info('Add {aa}USR{aa} {tttpy}\n{msg} {ttt}'.format_map(SafeDict(msg=msg)))
+            return self
 
         async def set_token(self, token: str):
             self.token = token
+            msg = f'Set token {self}'
             async with aiopg.connect(sets["psqlUri"]) as conn:
                 async with conn.cursor(cursor_factory=DictCursor) as cur:
                     await cur.execute("UPDATE users SET token = %s WHERE id = %s", (self.token, self.id))
+            Repost.logger.info('Set token {aa}USR{aa} {tttpy}\n{msg} {ttt}'.format_map(SafeDict(msg=msg)))
 
         def eq_by_args(self, other_id: int):
             return self.id == other_id
         
         @classmethod
-        def find_by_args(cls, id_: int) -> tuple[Repost.User, str]:
-            usr, msg = None, str()
+        def find_by_args(cls, id_: int) -> Repost.User:
+            usr = None
             for _usr in cls.all_:
                 if _usr.eq_by_args(id_):
                     usr = _usr
-                    msg += f'{usr}'
                     break
-            return usr, msg
+            return usr
         
         @tasks.loop(seconds=60)
         async def repost_task(self):
@@ -165,7 +154,7 @@ class Repost(commands.Cog):
                 self.task_walls = dict()
                 for sub in self.task_subs:
                     if sub.wall.id not in self.task_walls:
-                        self.task_walls[sub.wall.id] = {'wall': sub.wall, 'subs': set(), 'post_REQ': None, 'ERR': None, 'empty': False}
+                        self.task_walls[sub.wall.id] = {'wall_obj': sub.wall, 'subs': set(), 'post_REQ': None, 'post_RESP': None, 'ERR': None}
                     self.task_walls[sub.wall.id]['subs'].add(sub)
             # Req for posts
             for wall_id in self.task_walls:
@@ -174,44 +163,75 @@ class Repost(commands.Cog):
             await self.vk_pool.execute()
             # Offset req for pinned posts
             for wall_id in self.task_walls:
-                resp = self.task_walls[wall_id]['post_REQ'].result
-                if len(resp['items']) > 0:
-                    if resp['items'][0].get('is_pinned', False):
-                        self.task_walls[wall_id]['post_REQ'] = self.vk_pool.add_call('wall.get', self.token, {
-                            'owner_id': wall_id, 'extended': 1, 'offset': 1, 'count': 1, 'fields': 'photo_max', 'v': '5.84'})
+                wall = self.task_walls[wall_id]
+                if wall['post_REQ'].ok:
+                    wall['post_RESP'] = wall['post_REQ'].result
+                    if len(wall['post_RESP']['items']) > 0:
+                        if wall['post_RESP']['items'][0].get('is_pinned', False):
+                            wall['post_REQ'] = self.vk_pool.add_call('wall.get', self.token, {
+                                'owner_id': wall_id, 'extended': 1, 'offset': 1, 'count': 1, 'fields': 'photo_max', 'v': '5.84'})
+                else:
+                    wall['ERR'] = wall['post_REQ'].error
             await self.vk_pool.execute()
-            # Disable empty walls
-            for wall_id in self.task_walls:
-                resp = self.task_walls[wall_id]['post_REQ'].result
-                if len(resp['items']) == 0:
-                    self.task_walls[wall_id]['empty'] = True
+            # Repost
             msg = f'{self}\n'
             for wall_id in self.task_walls:
-                if not self.task_walls[wall_id]['empty']:
-                    resp = self.task_walls[wall_id]['post_REQ'].result
-                    # If post is new
-                    if resp['items'][0]['id'] > self.task_walls[wall_id]['wall'].last_id:
-                        new_post = True
-                        post_embed = compile_post_embed(resp)
-                        for sub in self.task_walls[wall_id]['subs']:
-                                dc_chn = self.client.get_channel(sub.channel.id)
-                                try:
-                                    await dc_chn.send(content=sub.msg, embed=post_embed)
-                                except Exception as exc:
-                                    if isinstance(exc, AttributeError):
-                                        await sub.channel.delete()
-                                    elif isinstance(exc, discord_errors.Forbidden):
-                                        await self.client.error_handler('repost_task', usr=self, exc=exc)
-                                    else:
-                                        raise
-                                else:
-                                    msg += f'\t\t{sub}\n'
-                        self.task_walls[wall_id]['wall'].last_id = resp['items'][0]['id']
-                        msg += f'\t{self.task_walls[wall_id]["wall"]}\n'
-                        async with aiopg.connect(sets["psqlUri"]) as conn:
-                            async with conn.cursor(cursor_factory=DictCursor) as cur:
-                                await cur.execute("UPDATE wall SET last_id = %s WHERE id = %s", (self.task_walls[wall_id]['wall'].last_id, self.task_walls[wall_id]['wall'].id))
-            
+                wall = self.task_walls[wall_id]
+                if not wall['ERR']:
+                    if wall['post_REQ'].ok:
+                        resp = wall['post_REQ'].result
+                        #Check if wall is not empty
+                        if len(resp['items']) > 0:
+                            resp = wall['post_REQ'].result
+                            # If post is new
+                            if resp['items'][0]['id'] > wall['wall_obj'].last_id:
+                                new_post = True
+                                wrapped = VKRespWrapper(post=resp, vk_info=self.client.vk_info)
+                                #Send messages
+                                msg += f'\t{wall["wall_obj"]}\n'
+                                for sub in wall['subs']:
+                                    if not sub.channel.disabled:
+                                        dc_chn = self.client.get_channel(sub.channel.id)
+                                        try:
+                                            await dc_chn.send(content=sub.msg, embed=wrapped.post_embed)
+                                        except Exception as exc:
+                                            if isinstance(exc, AttributeError):
+                                                submsg = await sub.channel.delete(intents=2)
+                                                msg += submsg
+                                            elif isinstance(exc, discord_errors.Forbidden):
+                                                bot_perms = dc_chn.permissions_for(dc_chn.guild.me)
+                                                required_perms = {'send_messages': True, 'embed_links': True}
+                                                missing_perms = [perm for perm, value in required_perms.items() if getattr(bot_perms, perm) != value]
+                                                if missing_perms:
+                                                    missing = [perm.replace('_', ' ').replace('guild', 'server').title() for perm in missing_perms]
+                                                    if len(missing) > 2:
+                                                        fmt = '{}, and {}'.format(", ".join(missing[:-1]), missing[-1])
+                                                    else:
+                                                        fmt = ' and '.join(missing)
+
+                                                    users_id = set()
+                                                    for sub_ in sub.channel.subscriptions:
+                                                        users_id.add(sub_.user.id)
+                                                    for user_id in users_id:
+                                                        dc_user = self.client.get_user(user_id)
+                                                        await dc_user.send(content=f"Couldn\'t repost to {dc_chn.mention} due to lack of permissions.\n" \
+                                                            "Channel Subscriptions are temporarily disabled.\n" \
+                                                            f"In order to enable them, give the Bot following permissions: `{fmt}`, and use `/subs manage` on the Channel.")
+                                                    sub.channel.disabled = True
+                                                else:
+                                                    raise
+                                            else:
+                                                raise
+                                        else:
+                                            msg += f'\t\t{sub}\n'
+                                wall['wall_obj'].last_id = wrapped.post['items'][0]['id']
+                                async with aiopg.connect(sets["psqlUri"]) as conn:
+                                    async with conn.cursor(cursor_factory=DictCursor) as cur:
+                                        await cur.execute("UPDATE wall SET last_id = %s WHERE id = %s", (
+                                            wall['wall_obj'].last_id, wall['wall_obj'].id))
+                    else:
+                        wall['ERR'] = wall['post_REQ'].error
+
             if new_post:
                 self.client.logger.info('Task {aa}USR{aa} {tttpy}\n{msg} {ttt}'.format_map(SafeDict(msg=msg)))
             self.sleep_on_error = 30
@@ -219,7 +239,7 @@ class Repost(commands.Cog):
         @repost_task.before_loop
         async def before_repost_task(self):
             await self.client.wait_until_ready()
-            self.task_walls = dict()
+            self.task_walls: dict[int, dict[str, Union[Repost.Wall, set, Optional[AsyncResult], Optional[dict], Optional[dict]]]] = dict()
             self.task_subs = set()
             self.vk_pool = AsyncVkExecuteRequestPool()
 
@@ -233,8 +253,7 @@ class Repost(commands.Cog):
     class Server: 
         all_: set[Repost.Server] = set()
 
-        def __init__(self, client: commands.Bot, id_: int, lang: str):
-            self.client = client
+        def __init__(self, id_: int, lang: str):
             self.id = id_
             self.lang = lang
 
@@ -245,36 +264,28 @@ class Repost(commands.Cog):
             return f'SRV {self.id}'
 
         @classmethod
-        def init(cls, client: commands.Bot, id_: int, lang: str) -> tuple[Repost.Server, str]:
-            self = cls(client, id_, lang)
-            msg = f'Init {self}'
-            return self, msg
-
-        @classmethod
-        async def add(cls, client: commands.Bot, id_: int) -> tuple[Repost.Server, str]:
+        async def add(cls, client: commands.Bot, id_: int) -> Repost.Server:
             self = cls(client, id_, "en")
             msg = f'Add {self}'
             async with aiopg.connect(sets["psqlUri"]) as conn:
                 async with conn.cursor(cursor_factory=DictCursor) as cur:
                     await cur.execute("INSERT INTO server (id) VALUES(%s)", (self.id,))
-            return self, msg
-
-        def Channel_init(self, id_: int) -> tuple[Repost.Server.Channel, str]:
-            return Repost.Server.Channel.init(self, id_)
+            Repost.logger.info('Add {aa}SRV{aa} {tttpy}\n{msg} {ttt}'.format_map(SafeDict(msg=msg)))
+            return self
 
         async def Channel_add(self, id_: int) -> tuple[Repost.Server.Channel, str]:
-            return await Repost.Server.Channel.add(self, id_)
+            return await Repost.Server.Channel.add(self, id_, False)
 
-        async def delete(self) -> str:
+        async def delete(self):
             msg = f'Del {self}'
             async with aiopg.connect(sets["psqlUri"]) as conn:
                 async with conn.cursor(cursor_factory=DictCursor) as cur:
                     await cur.execute("DELETE FROM server WHERE id = %s", (self.id,))
             for chn in self.channels.copy():
-                _msg = await chn.delete(is_called=True)
-                msg += f'\n{_msg}'
+                await chn.delete(is_called=True)
+                msg += f'\nDel {chn}'
             Repost.Server.all_.remove(self)
-            return msg
+            Repost.logger.info('Del {aa}SRV{aa} {tttpy}\n{msg} {ttt}'.format_map(SafeDict(msg=msg)))
 
         async def set_lang(self, lang: str):
             pass
@@ -282,30 +293,29 @@ class Repost(commands.Cog):
         def eq_by_args(self, other_id: int):
             return self.id == other_id
 
-        def find_channel(self, id_: int) -> tuple[Repost.Server.Channel, str]:
-            chn, msg = None, str()
+        def find_channel(self, id_: int) -> Repost.Server.Channel:
+            chn = None
             for _chn in self.channels:
                 if _chn.eq_by_args(id_):
                     chn = _chn
-                    msg += f'{_chn}'
-            return chn, msg
+            return chn
         
         @classmethod
-        def find_by_args(cls, id_: int) -> tuple[Repost.Server, str]:
-            srv, msg = None, str()
+        def find_by_args(cls, id_: int) -> Repost.Server:
+            srv = None
             for _srv in cls.all_:
                 if _srv.eq_by_args(id_):
                     srv = _srv
-                    msg += f'{_srv}'
                     break
-            return srv, msg
+            return srv
 
         class Channel:
             all_: set[Repost.Server.Channel] = set()
 
-            def __init__(self, server: Repost.Server, id_: int):
+            def __init__(self, server: Repost.Server, id_: int, disabled: bool):
                 self.server = server
                 self.id = id_
+                self.disabled = disabled
                 self.subscriptions: set[Repost.Server.Channel.Subscription] = set()
                 server.channels.add(self)
 
@@ -315,41 +325,33 @@ class Repost(commands.Cog):
                 return f'CHN {self.id}'
 
             @classmethod
-            def init(cls, server: Repost.Server, id_: int) -> tuple[Repost.Server.Channel, str]:
-                self = cls(server, id_)
-                msg = f'Init {self}'
-                return self, msg
-
-            @classmethod
-            async def add(cls, server: Repost.Server, id_: int) -> tuple[Repost.Server.Channel, str]:
-                self = cls(server, id_)
+            async def add(cls, server: Repost.Server, id_: int, disabled: bool) -> Repost.Server.Channel:
+                self = cls(server, id_, disabled)
                 msg = f'Add {self}'
                 async with aiopg.connect(sets["psqlUri"]) as conn:
                     async with conn.cursor(cursor_factory=DictCursor) as cur:
                         await cur.execute("INSERT INTO channel (id, server_id) VALUES(%s, %s)", (
                             self.id, self.server.id))
-                return self, msg
-            
-            def Subscription_init(self, wall: Repost.User, user: Repost.User, msg: str, id_: int) -> tuple[Repost.Server.Channel.Subscription, str]:
-                return Repost.Server.Channel.Subscription.init(self, wall, user, msg, id_)
+                Repost.logger.info('Add {aa}CHN{aa} {tttpy}\n{msg} {ttt}'.format_map(SafeDict(msg=msg)))
+                return self
 
             async def Subscription_add(self, wall: Repost.Wall, user: Repost.User, msg: str) -> tuple[Repost.Server.Channel.Subscription, str]:
                 return await Repost.Server.Channel.Subscription.add(self, wall, user, msg)
 
-            async def delete(self, is_called: bool=False) -> str:
-                msg = f'Del {self}'
+            async def delete(self, is_called: bool=False):
+                self.server.channels.remove(self)
+                Repost.Server.Channel.all_.remove(self)
                 for sub in self.subscriptions.copy():
-                    _msg = await sub.delete(is_called=True)
-                    msg += f'\n\t\t{_msg}'
+                    await sub.delete(is_called=True)
+                    msg += f'\t\t{sub}'
                 if is_called:
                     pass
                 else:
+                    msg = f'Del {self}'
                     async with aiopg.connect(sets["psqlUri"]) as conn:
                         async with conn.cursor(cursor_factory=DictCursor) as cur:
                             await cur.execute("DELETE FROM channel WHERE id = %s", (self.id,))
-                self.server.channels.remove(self)
-                Repost.Server.Channel.all_.remove(self)
-                return msg
+                    Repost.logger.info('Del {aa}CHN{aa} {tttpy}\n{msg} {ttt}'.format_map(SafeDict(msg=msg)))
 
             def eq_by_args(self, other_id: int):
                 return self.id == other_id

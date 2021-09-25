@@ -6,7 +6,7 @@ import discord_slash.error as slash_errors
 import aiovk.exceptions as aiovk_errors
 
 from rsc.config import sets
-from rsc.functions import set_error_embed, add_command_and_example
+from rsc.functions import set_error_embed
 from rsc.exceptions import *
 
 
@@ -54,16 +54,21 @@ class ExceptionHandler(commands.Cog):
             if ctx.subcommand_name == 'account':
                 pass
             elif ctx.subcommand_name == 'add':
+                title = '❌ Can\'t add subscription'
                 if isinstance(exc, SubExists):
                     exc.embed = set_error_embed(f'{exc.chn.mention} is already subscribed to wall **{exc.wall_id}**.')
             elif ctx.subcommand_name == 'manage':
+                title = '❌ Can\'t manage subscriptions'
                 if isinstance(exc, NoSubs):
                     exc.embed = set_error_embed(f'{exc.chn.mention} doesn\'t have any subscriptions.')
+                elif isinstance(exc, SubscriptionChannelMissingPermissions):
+                    exc.embed = set_error_embed(f'Bot is missing permission(s).\n\n> {exc.message}')
         elif ctx.name == 'cogs':
             if isinstance(exc, slash_errors.CheckFailure):
                 exc.embed = set_error_embed(f'No 🙂')
             
         if not hasattr(exc, 'embed'):
+            title = '❌ Can\'t execute command'
             if isinstance(exc, NotAuthenticated):
                 exc.embed = set_error_embed(f'You aren\'t authenticated.\n\n> Use `/subs account` to login with your VK profile.')
             elif isinstance(exc, MsgTooLong):
@@ -76,13 +81,10 @@ class ExceptionHandler(commands.Cog):
                 exc.embed = set_error_embed(f'You are missing permission(s).\n\n> {exc}')
 
         if hasattr(exc, 'embed'):
-            if hasattr(exc, 'command_and_example'):
-                add_command_and_example(ctx, exc.embed)
-
             if hasattr(ctx, 'msg'):
-                await ctx.msg.edit(content=None, embeds=[exc.embed], components=[])
+                await ctx.msg.edit(content=f'❌ Error', embeds=[exc.embed], components=[])
             else:
-                await ctx.send(embeds=[exc.embed])
+                await ctx.send(content=f'❌ Error', embeds=[exc.embed], components=[])
         else:
             await self.client.error_handler('slash_command', ctx=ctx, exc=exc)
 
